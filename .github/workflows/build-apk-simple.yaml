@@ -36,8 +36,11 @@ jobs:
       - name: Apply Go patches
         run: |
           cd "$(go env GOROOT)"
+          # MetaCubeX 定制 Go 可能已内置部分补丁，或新版 Go 源码已变。
+          # -N 跳过已应用的补丁；|| true 容忍仅影响 32 位运行时的补丁失败，
+          # 不阻塞 64 位（arm64-v8a / x86_64）目标的构建。
           for p in "$GITHUB_WORKSPACE"/.github/patch/*.patch; do
-            patch --verbose -p 1 < "$p"
+            patch -N -p 1 < "$p" || true
           done
 
       - name: Cache Go
