@@ -32,14 +32,17 @@ subprojects {
     apply(plugin = if (isApp) "com.android.application" else "com.android.library")
 
     fun queryConfigProperty(key: String): Any? {
-        val localProperties = Properties()
+        // 优先读 gradle 属性（gradle.properties / -P / ORG_GRADLE_PROJECT_*），
+        // 其次回退到 local.properties。这样 custom.application.id 等可写在
+        // 已提交的 gradle.properties 里，在 CI 构建中也生效。
+        project.findProperty(key)?.let { return it }
         val localPropertiesFile = rootProject.file("local.properties")
         if (localPropertiesFile.exists()) {
+            val localProperties = Properties()
             localProperties.load(localPropertiesFile.inputStream())
-        } else {
-            return null
+            return localProperties.getProperty(key)
         }
-        return localProperties.getProperty(key)
+        return null
     }
 
     extensions.configure<BaseExtension> {
