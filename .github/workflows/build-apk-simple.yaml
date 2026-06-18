@@ -1,0 +1,84 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Checkout submodules
+        run: git submodule update --init --recursive --force
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-download-base-url: https://github.com/MetaCubeX/go/releases/download/build
+          go-version: "1.26"
+
+      - name: Apply Go patches
+        run: |
+          cd "$(go env GOROOT)"
+          for p in "$GITHUB_WORKSPACE"/.github/patch/*.patch; do
+            patch --verbose -p 1 < "$p"
+          done
+
+      - name: Cache Go
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Update CA
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates
+          sudo update-ca-certificates
+          cp -f /etc/ssl/certs/ca-certificates.crt core/src/foss/golang/clash/component/ca/ca-certificates.crt
+
+      - name: Use release signing if secrets exist
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$SIGNING_STORE_PASSWORD" ] && [ -n "$SIGNING_KEY_ALIAS" ] && [ -n "$SIGNING_KEY_PASSWORD" ]; then
+            {
+              echo "keystore.password=$SIGNING_STORE_PASSWORD"
+              echo "key.alias=$SIGNING_KEY_ALIAS"
+              echo "key.password=$SIGNING_KEY_PASSWORD"
+            } > signing.properties
+            echo "Release signing enabled."
+          else
+            echo "Signing secrets are not configured. APK will use debug signing."
+          fi
+
+      - name: Build APK
+        run: ./gradlew --no-daemon app:assembleMetaRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: shenxianyun-android-apk
+          path: app/build/outputs/apk/meta/release/*.apk

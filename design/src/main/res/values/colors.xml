@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="color_clash_light">#1e4376</color>
+    <color name="color_clash_dark">#1976d2</color>
+    <color name="color_system_ui_overlay">#50000000</color>
+    <color name="color_light_background">#FFFAFAFA</color>
+    <color name="color_dark_background">#FF121212</color>
+    <color name="color_dark_surface">#FF202020</color>
+    <color name="color_light_clash_stopped">#FF808080</color>
+    <color name="color_light_control_disabled">#FFD3D3D3</color>
+    <color name="color_dark_control_disabled">#FF808080</color>
+    <color name="color_error">#FFB00020</color>
+    <color name="jc116_power_pink">#FF5C8A</color>
+    <color name="sxy_bg_top">#101116</color>
+    <color name="sxy_bg_bottom">#17151B</color>
+    <color name="sxy_surface">#1F1D25</color>
+    <color name="sxy_surface_deep">#171820</color>
+    <color name="sxy_surface_soft">#24222C</color>
+    <color name="sxy_surface_stroke">#3A3542</color>
+    <color name="sxy_surface_stroke_soft">#2C3440</color>
+    <color name="sxy_text_muted">#A8A2B2</color>
+    <color name="sxy_text_soft">#DDD8E5</color>
+    <color name="sxy_cyan">#45E4CF</color>
+    <color name="sxy_green">#4FE3A3</color>
+</resources>

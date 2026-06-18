@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <data>
+        <variable
+            name="self"
+            type="com.github.kr328.clash.design.MainDesign" />
+        <variable
+            name="clashRunning"
+            type="boolean" />
+        <variable
+            name="forwarded"
+            type="String" />
+        <variable
+            name="mode"
+            type="String" />
+        <variable
+            name="ruleMode"
+            type="boolean" />
+        <variable
+            name="globalMode"
+            type="boolean" />
+        <variable
+            name="profileName"
+            type="String" />
+        <variable
+            name="activationCode"
+            type="String" />
+        <variable
+            name="colorClashStarted"
+            type="int" />
+        <variable
+            name="colorClashStopped"
+            type="int" />
+        <variable
+            name="hasProviders"
+            type="boolean" />
+
+        <import type="android.view.View" />
+        <import type="com.github.kr328.clash.design.MainDesign.Request" />
+    </data>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_sxy_main"
+        android:paddingStart="@{self.surface.insets.start}"
+        android:paddingEnd="@{self.surface.insets.end}">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:animateLayoutChanges="true"
+                android:clipToPadding="false"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingHorizontal="22dp"
+                android:paddingTop="@{self.surface.insets.top}"
+                android:paddingBottom="@{self.surface.insets.bottom}">
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp" />
+
+                <ImageView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:contentDescription="@string/application_name"
+                    android:src="@drawable/ic_sxy_mark" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/application_name"
+                    android:textAppearance="@style/TextAppearance.MaterialComponents.Headline4"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="智能加速 · 稳定连接"
+                    android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                    android:textColor="@color/sxy_text_muted" />
+
+                <FrameLayout
+                    android:layout_width="188dp"
+                    android:layout_height="188dp"
+                    android:layout_marginTop="30dp">
+
+                    <View
+                        android:layout_width="188dp"
+                        android:layout_height="188dp"
+                        android:alpha="@{clashRunning ? 0.95f : 0.5f}"
+                        android:background="@drawable/bg_sxy_power_halo" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/power_button"
+                        android:layout_width="158dp"
+                        android:layout_height="158dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_sxy_power_inner"
+                        android:elevation="10dp"
+                        android:onClick="@{() -> self.request(Request.ToggleStatus)}"
+                        android:theme="@style/AppThemeDark"
+                        android:text="@{clashRunning ? @string/main_stop : @string/main_start}"
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5"
+                        android:textColor="@android:color/white"
+                        app:backgroundTint="@null"
+                        app:cornerRadius="80dp"
+                        app:icon="@{clashRunning ? @drawable/ic_baseline_stop : @drawable/ic_baseline_vpn_lock}"
+                        app:iconGravity="top"
+                        app:iconPadding="8dp"
+                        app:iconSize="42dp"
+                        app:iconTint="@android:color/white" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@{clashRunning ? @string/format_traffic_forwarded(forwarded) : @string/tap_to_start}"
+                    android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                    android:textColor="@color/sxy_text_muted" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_sxy_chip"
+                        android:text="@{clashRunning ? @string/running : @string/stopped}"
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+                        android:textColor="@{clashRunning ? @color/sxy_green : @color/sxy_text_muted}"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_sxy_chip"
+                        android:text="@{activationCode != null ? @string/code_bound : @string/not_selected}"
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+                        android:textColor="@color/sxy_text_soft" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:background="@drawable/bg_sxy_panel"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_sxy_mode_group"
+                        android:padding="3dp"
+                        app:selectionRequired="true"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.button.MaterialButton
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="46dp"
+                            android:layout_weight="1"
+                            android:checked="@{ruleMode}"
+                            android:onClick="@{() -> self.request(Request.SetRuleMode)}"
+                            android:text="@string/rule_mode"
+                            android:textColor="@color/sxy_text_soft"
+                            app:cornerRadius="10dp"
+                            app:strokeColor="@color/sxy_surface_stroke_soft" />
+
+                        <com.google.android.material.button.MaterialButton
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="46dp"
+                            android:layout_weight="1"
+                            android:checked="@{globalMode}"
+                            android:onClick="@{() -> self.request(Request.SetGlobalMode)}"
+                            android:text="@string/global_mode"
+                            android:textColor="@color/sxy_text_soft"
+                            app:cornerRadius="10dp"
+                            app:strokeColor="@color/sxy_surface_stroke_soft" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                    <com.github.kr328.clash.design.view.LargeActionLabel
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:background="@drawable/bg_sxy_action"
+                        android:onClick="@{() -> self.request(Request.OpenProxy)}"
+                        app:icon="@drawable/ic_sxy_node"
+                        app:text="@string/proxy" />
+
+                    <com.github.kr328.clash.design.view.LargeActionLabel
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_sxy_action"
+                        android:onClick="@{() -> self.request(Request.ImportByCode)}"
+                        app:icon="@drawable/ic_baseline_cloud_download"
+                        app:subtext="@string/import_by_code_summary"
+                        app:text="@{activationCode != null ? @string/switch_import_code : @string/import_by_code}" />
+
+                    <com.github.kr328.clash.design.view.LargeActionLabel
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_sxy_action"
+                        android:onClick="@{() -> self.request(Request.UpdateSubscription)}"
+                        app:icon="@drawable/ic_baseline_cloud_download"
+                        app:subtext="@string/update_subscription_summary"
+                        app:text="@string/update_subscription" />
+
+                    <com.github.kr328.clash.design.view.LargeActionLabel
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_sxy_action"
+                        android:onClick="@{() -> self.request(Request.RenewCode)}"
+                        app:icon="@drawable/ic_baseline_add"
+                        app:subtext="@{activationCode != null ? @string/renew_code_summary : @string/new_code_summary}"
+                        app:text="@{activationCode != null ? @string/renew_code : @string/new_code}" />
+
+                    <com.github.kr328.clash.design.view.LargeActionLabel
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_sxy_action"
+                        android:onClick="@{() -> self.request(Request.OpenSettings)}"
+                        app:icon="@drawable/ic_baseline_settings"
+                        app:text="@string/settings" />
+                </LinearLayout>
+
+                <com.github.kr328.clash.design.view.LargeActionLabel
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_marginTop="26dp"
+                    android:layout_marginBottom="@dimen/main_label_margin_vertical"
+                    android:onClick="@{() -> self.request(Request.OpenProviders)}"
+                    android:visibility="@{View.GONE}"
+                    app:icon="@drawable/ic_baseline_swap_vertical_circle"
+                    app:text="@string/providers" />
+
+                <com.github.kr328.clash.design.view.LargeActionLabel
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginVertical="@dimen/main_label_margin_vertical"
+                    android:onClick="@{() -> self.request(Request.OpenLogs)}"
+                    android:visibility="@{View.GONE}"
+                    app:icon="@drawable/ic_baseline_assignment"
+                    app:text="@string/logs" />
+            </LinearLayout>
+        </ScrollView>
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>

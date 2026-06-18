@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:endColor="@color/sxy_surface_deep"
+        android:startColor="@color/sxy_surface" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/sxy_surface_stroke_soft" />
+    <corners android:radius="22dp" />
+</shape>
