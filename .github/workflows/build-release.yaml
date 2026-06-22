@@ -94,14 +94,20 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
         run: |
-          touch signing.properties
-          echo keystore.password="$SIGNING_STORE_PASSWORD" > signing.properties
-          echo key.alias="$SIGNING_KEY_ALIAS" >> signing.properties
-          echo key.password="$SIGNING_KEY_PASSWORD" >> signing.properties
-            
-          echo "cat signing.properties"
-          cat signing.properties
+          if [ -n "$SIGNING_STORE_PASSWORD" ] && [ -n "$SIGNING_KEY_ALIAS" ] && [ -n "$SIGNING_KEY_PASSWORD" ] && [ -n "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > release.keystore
+            {
+              echo "keystore.password=$SIGNING_STORE_PASSWORD"
+              echo "key.alias=$SIGNING_KEY_ALIAS"
+              echo "key.password=$SIGNING_KEY_PASSWORD"
+            } > signing.properties
+            echo "Release signing enabled (keystore $(wc -c < release.keystore) bytes)."
+          else
+            rm -f signing.properties
+            echo "Signing secrets are not configured. APK will use debug signing."
+          fi
 
       - name: Release Build
         if: success()
