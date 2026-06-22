@@ -56,10 +56,15 @@ class MainActivity : BaseActivity<MainDesign>() {
         const val KEY_PROFILE_UUID = "profile_uuid"
         const val KEY_UPDATE_VERSION = "update_version"
         const val KEY_CLIENT_ID = "client_id"
-        const val UPDATE_CHECK_INTERVAL_MILLIS = 60_000L
-        const val HEARTBEAT_INTERVAL_MILLIS = 30_000L
-        const val TRAFFIC_REPORT_INTERVAL_MILLIS = 30_000L
+        const val KEY_EXPIRED_PROFILE_UUID = "expired_profile_uuid"
+        // 订阅更新轮询：仅在已连接时运行，基础 10 分钟，失败指数退避到最多 1 小时。
+        const val UPDATE_CHECK_INTERVAL_MILLIS = 600_000L
+        const val UPDATE_CHECK_MAX_INTERVAL_MILLIS = 3_600_000L
+        const val HEARTBEAT_INTERVAL_MILLIS = 60_000L
+        const val TRAFFIC_REPORT_INTERVAL_MILLIS = 60_000L
         const val MAX_TRAFFIC_REPORT_DELTA_BYTES = 5L * 1024 * 1024 * 1024
+        const val EXPIRED_NODE_NAME = "提取码到期，请续费使用"
+        const val EXPIRED_PROFILE_NAME = "提取码已到期"
     }
 
     override suspend fun main() {
@@ -80,6 +85,10 @@ class MainActivity : BaseActivity<MainDesign>() {
         var lastHeartbeatAt = 0L
         var lastTrafficReportAt = 0L
         var lastReportedTrafficTotal: Long? = null
+        // 订阅更新轮询：在途互斥 + 失败指数退避（叠加抖动），避免 web 掉线恢复后惊群打满服务器。
+        var subscriptionUpdateInFlight = false
+        var subscriptionFailures = 0
+        var subscriptionCheckDelay = UPDATE_CHECK_INTERVAL_MILLIS
 
         while (isActive) {
             select<Unit> {
@@ -180,10 +189,23 @@ class MainActivity : BaseActivity<MainDesign>() {
                             }
                         }
                     }
-                    if (now - lastSubscriptionUpdateCheck >= UPDATE_CHECK_INTERVAL_MILLIS) {
+                    // 仅在已连接、无在途请求、且到达（含退避后的）间隔时才发起更新检查。
+                    if (clashRunning &&
+                        !subscriptionUpdateInFlight &&
+                        now - lastSubscriptionUpdateCheck >= subscriptionCheckDelay
+                    ) {
                         lastSubscriptionUpdateCheck = now
+                        subscriptionUpdateInFlight = true
                         launch {
-                            runCatching { design.checkSubscriptionUpdate() }
+                            val ok = runCatching { design.checkSubscriptionUpdate() }.isSuccess
+                            subscriptionFailures = if (ok) 0 else minOf(subscriptionFailures + 1, 4)
+                            val backoff = minOf(
+                                UPDATE_CHECK_INTERVAL_MILLIS shl subscriptionFailures,
+                                UPDATE_CHECK_MAX_INTERVAL_MILLIS,
+                            )
+                            // 50%~100% 抖动，打散各客户端的请求时间。
+                            subscriptionCheckDelay = (backoff * (0.5 + Math.random() * 0.5)).toLong()
+                            subscriptionUpdateInFlight = false
                         }
                     }
                 }
@@ -358,6 +380,18 @@ class MainActivity : BaseActivity<MainDesign>() {
             .show()
     }
 
+    private fun MainDesign.showExpiredDialog() {
+        AlertDialog.Builder(this@MainActivity)
+            .setTitle(R.string.import_code_expired_title)
+            .setMessage(R.string.import_code_expired_message)
+            .setPositiveButton(R.string.renew_code) { _, _ -> openCodeStorePage() }
+            .setNeutralButton(R.string.import_by_code) { _, _ ->
+                showCodeImportDialog()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private suspend fun MainDesign.importSubscriptionCode(code: String, silent: Boolean = false) {
         try {
             if (!silent) {
@@ -428,9 +462,11 @@ class MainActivity : BaseActivity<MainDesign>() {
             showCodeImportDialog()
             return
         }
+        // 已到期：仍允许开启开关，但切换到只含一个不可上网节点的占位配置并弹窗提示续费；
+        // 续费后由轮询自动检测并恢复正式订阅。
         if (!isActivationStillValid(code)) {
-            showToast(R.string.import_code_expired, ToastDuration.Long)
-            return
+            activateExpiredProfile()
+            showExpiredDialog()
         }
 
         val active = withProfile { queryActive() }
@@ -589,8 +625,10 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
+    // 订阅更新轮询：仅在已连接时执行，空闲时不请求，降低服务器压力。
+    // 网络异常会向上抛出，交由调用方做指数退避。
     private suspend fun MainDesign.checkSubscriptionUpdate() {
-        if (clashRunning) {
+        if (!clashRunning) {
             return
         }
 
@@ -599,11 +637,13 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
 
-        val remoteVersion = try {
-            queryUpdateVersion(code)
-        } catch (_: Exception) {
-            null
-        } ?: return
+        // 处于到期占位配置时，低频探测提取码是否已续费，成功则自动恢复正式订阅。
+        if (onExpiredPlaceholder()) {
+            recoverFromExpired(code)
+            return
+        }
+
+        val remoteVersion = queryUpdateVersion(code) ?: return
 
         val localVersion = activationStore().getLong(KEY_UPDATE_VERSION, 0L)
         if (localVersion > 0L && remoteVersion <= localVersion) {
@@ -611,6 +651,103 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
 
         importSubscriptionCode(code, silent = true)
+    }
+
+    // 生成只含单个本地不可上网节点的占位配置：除订阅/续费域名直连外，其余流量全部
+    // 指向不可达的本地 socks5（无法上网），节点名直接提示续费。
+    private fun buildExpiredProfileYaml(): String = """
+        mixed-port: 7890
+        mode: rule
+        proxies:
+          - name: "$EXPIRED_NODE_NAME"
+            type: socks5
+            server: 127.0.0.1
+            port: 1
+        proxy-groups:
+          - name: "节点选择"
+            type: select
+            proxies:
+              - "$EXPIRED_NODE_NAME"
+        rules:
+          - DOMAIN-SUFFIX,jc116.com,DIRECT
+          - MATCH,节点选择
+    """.trimIndent()
+
+    private fun writeExpiredProfileConfig(uuid: UUID) {
+        val config = filesDir.resolve("pending").resolve(uuid.toString()).resolve("config.yaml")
+        config.parentFile?.mkdirs()
+        config.writeText(buildExpiredProfileYaml())
+    }
+
+    private fun expiredProfileUuid(): UUID? =
+        activationStore().getString(KEY_EXPIRED_PROFILE_UUID, null)
+            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+
+    private suspend fun onExpiredPlaceholder(): Boolean {
+        val expiredUuid = expiredProfileUuid() ?: return false
+        val active = withProfile { queryActive() } ?: return false
+        return active.uuid == expiredUuid
+    }
+
+    // 提取码到期：切换到占位配置（保持可“开启”但不可上网），而不是直接拒绝。
+    private suspend fun MainDesign.activateExpiredProfile() {
+        val existing = expiredProfileUuid()
+        withProfile {
+            val uuid = if (existing != null && queryByUUID(existing) != null) {
+                existing
+            } else {
+                val created = create(Profile.Type.File, EXPIRED_PROFILE_NAME)
+                this@MainActivity.writeExpiredProfileConfig(created)
+                commit(created, null)
+                activationStore().edit()
+                    .putString(KEY_EXPIRED_PROFILE_UUID, created.toString())
+                    .apply()
+                created
+            }
+            queryByUUID(uuid)?.let { setActive(it) }
+        }
+        fetch()
+    }
+
+    // 续费恢复：重新校验提取码（不计入导入次数），成功则重新导入正式订阅并删除占位配置。
+    private suspend fun MainDesign.recoverFromExpired(code: String) {
+        val verifyJson = verifyActivationCode(code, countImport = false)
+        if (!verifyJson.optBoolean("ok", false)) {
+            return
+        }
+        val url = verifyJson.optString("subscription_url", "").trim()
+        if (url.isBlank()) {
+            return
+        }
+        val expiresAt = verifyJson.optString("expires_at", "")
+        val name = "Code $code"
+        val expiredUuid = expiredProfileUuid()
+        withProfile {
+            val savedUuid = activationStore().getString(KEY_PROFILE_UUID, null)
+                ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+            val uuid = if (savedUuid != null && savedUuid != expiredUuid && queryByUUID(savedUuid) != null) {
+                savedUuid
+            } else {
+                create(Profile.Type.Url, name)
+            }
+            patch(uuid, name, url, 0)
+            commit(uuid, null)
+            queryByUUID(uuid)?.let { setActive(it) }
+            if (expiredUuid != null) {
+                runCatching { delete(expiredUuid) }
+            }
+            activationStore().edit()
+                .putString(KEY_CODE, code)
+                .putString(KEY_EXPIRES_AT, expiresAt)
+                .putString(KEY_PROFILE_UUID, uuid.toString())
+                .remove(KEY_EXPIRED_PROFILE_UUID)
+                .apply()
+        }
+        verifyJson.optLong("update_version", 0).takeIf { it > 0 }?.let { version ->
+            activationStore().edit().putLong(KEY_UPDATE_VERSION, version).apply()
+        }
+        fetch()
+        showToast(R.string.subscription_recovered, ToastDuration.Long)
     }
 
     private suspend fun isActivationStillValid(code: String): Boolean {

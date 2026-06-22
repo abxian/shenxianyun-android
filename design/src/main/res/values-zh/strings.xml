@@ -70,6 +70,10 @@
     <string name="import_code_success">订阅已导入</string>
     <string name="import_code_required">请先输入提取码</string>
     <string name="import_code_expired">提取码已到期</string>
+    <string name="import_code_expired_title">提取码已到期</string>
+    <string name="import_code_expired_message">当前提取码已到期，已切换到「提取码到期，请续费使用」占位节点，暂时无法上网。\n请续费后重新导入提取码即可恢复；续费成功后也会自动检测并恢复正常订阅。</string>
+    <string name="subscription_recovered">提取码已续费，订阅已自动恢复</string>
+    <string name="manage_profiles">配置文件管理（切换/导入）</string>
     <string name="import_code_invalid">提取码无效</string>
     <string name="select_node">选择节点</string>
     <string name="select_node_start_first">请先开启代理再选择节点</string>

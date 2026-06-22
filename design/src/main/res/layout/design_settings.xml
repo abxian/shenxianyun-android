@@ -31,6 +31,13 @@
                 <com.github.kr328.clash.design.view.ActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:onClick="@{() -> self.request(Request.StartProfiles)}"
+                    app:icon="@drawable/ic_baseline_view_list"
+                    app:text="@string/manage_profiles" />
+
+                <com.github.kr328.clash.design.view.ActionLabel
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartApp)}"
                     app:icon="@drawable/ic_baseline_settings"
                     app:text="@string/app" />

@@ -30,6 +30,10 @@
     <string name="import_code_success">Subscription imported</string>
     <string name="import_code_required">Please enter a subscription code first</string>
     <string name="import_code_expired">Subscription code expired</string>
+    <string name="import_code_expired_title">Subscription code expired</string>
+    <string name="import_code_expired_message">Your subscription code has expired. Switched to the \"renew to continue\" placeholder node, so there is no internet for now.\nRenew and re-import the code to restore; once renewed it will also be detected and restored automatically.</string>
+    <string name="subscription_recovered">Code renewed, subscription restored</string>
+    <string name="manage_profiles">Manage profiles (switch / import)</string>
     <string name="import_code_invalid">Subscription code invalid</string>
     <string name="select_node">Select Node</string>
     <string name="select_node_start_first">Start proxy before selecting node</string>
