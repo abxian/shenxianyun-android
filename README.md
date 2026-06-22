@@ -271,21 +271,20 @@ APK 按 ABI 拆分 + 一个 universal 包，文件名形如：
 ### 三、签名密钥（重要，要记清楚）
 
 - **签名密钥统一存放在私有仓库
-  [`abxian/shenxianyun-keys`](https://github.com/abxian/shenxianyun-keys)**，
-  绝不能提交进本公开仓库。
-- 当前 keys 仓库里已有的是**桌面端 Tauri updater 私钥**
-  （`shenxianyun-updater.key` 等）；**安卓 release keystore（`release.keystore`）也应放在此仓库统一管理。**
-- ⚠️ **现状**：本仓库根目录没有 `release.keystore`，CI 也没有配置 `SIGNING_STORE_PASSWORD` /
-  `SIGNING_KEY_ALIAS` / `SIGNING_KEY_PASSWORD` secrets，所以
-  `build.gradle.kts` 的签名逻辑会**回退到 debug 签名** ——
-  也就是目前 Action 产出的是 **debug 签名包**。
-- 要发布**正式 release 签名**包，二选一：
-  1. **本地签名**：从 `shenxianyun-keys` 取 `release.keystore`，下载 Action 产物后用
-     `apksigner sign --ks release.keystore ...` 手动签名再上传；
-  2. **CI 签名**：把 `release.keystore` 注入 CI（如 base64 secret 解码到仓库根），
-     并配置上述 3 个 `SIGNING_*` secrets，`assembleMetaRelease` 即自动用 release 签名。
-
-  签名配置见 `build.gradle.kts` 的 `signingConfigs`（读取根目录 `signing.properties` + `release.keystore`）。
+  [`abxian/shenxianyun-keys`](https://github.com/abxian/shenxianyun-keys) 的 `android/` 目录**，
+  绝不能提交进本公开仓库。包含 `release.keystore`（PKCS12）、`release.keystore.base64`、
+  `keystore-password.txt` 等，详见该目录的 README。
+  - 别名 alias：`shenxianyun`；store 与 key 同密码（见 `keystore-password.txt`）。
+  - ⚠️ Android 覆盖安装要求新旧 APK **同一密钥**，此 keystore 丢了老用户就无法升级，务必保管好。
+- **CI 已接通正式签名**：公开仓库已配置 4 个 Actions Secret —
+  `SIGNING_KEYSTORE_BASE64`（keystore 的 base64）、`SIGNING_STORE_PASSWORD`、
+  `SIGNING_KEY_ALIAS`、`SIGNING_KEY_PASSWORD`。
+  `build-apk-simple.yaml` 的「Use release signing」步骤会把 base64 解码成 `release.keystore`
+  并写 `signing.properties`，`build.gradle.kts` 的 `signingConfigs` 检测到即启用 **release 正式签名**
+  （4 个 secret 缺任一则回退 debug 签名）。
+- 需要重配 secret 时，按 `shenxianyun-keys/android/README.md` 里的 `gh secret set` 命令执行。
+- 如需本地手动签名（不走 CI）：取 `release.keystore` 后
+  `apksigner sign --ks release.keystore --ks-key-alias shenxianyun ...`。
 
 ### 四、重命名后上传到 dufs 分发服务
 
