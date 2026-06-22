@@ -222,8 +222,95 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 当前本地版本：
 
 ```text
-versionCode: 211031
-versionName: 2.11.31.Meta.debug
+versionCode: 211033
+versionName: 2.11.33.Meta
 ```
 
-后台 APK 更新配置里的 `latest_version_code` 要使用 `211031` 或更高。
+后台 APK 更新配置里的 `latest_version_code` 要使用 `211033` 或更高。
+
+## 神仙云发布与分发流程（安卓端）
+
+> 每次更新提交、编译、发布都要遵循以下流程。PC 桌面端流程见
+> [shenxianyun](https://github.com/abxian/shenxianyun) 的 README。
+
+### 一、改完代码后必须先升版本号
+
+安卓端版本号在 **`build.gradle.kts`** 一处（约第 64~65 行）：
+
+```kotlin
+versionName = "2.11.33"
+versionCode = 211033
+```
+
+- `versionName` 用语义版本（如 `2.11.33`）。
+- `versionCode` 用 `211033` 这种整数，**每次发布必须比上一次大**（后台 APK 更新检测、Play 安装升级都靠它）。
+- 升级后记得同步更新上面「当前版本」一节，以及后台的 `latest_version_code`。
+
+### 二、提交并触发公开仓库 Action 编译
+
+Build Android APK（`.github/workflows/build-apk-simple.yaml`）在 **push 到 `main` 分支**时自动触发
+（也可在 Actions 页手动 `workflow_dispatch`）。
+
+```bash
+git add -A
+git commit -m "feat: xxx (v2.11.33)"
+git push origin main      # 推送即触发 APK 构建（约 5 分钟）
+```
+
+构建会拉取 clash 内核子模块、应用 Go 补丁、执行 `./gradlew app:assembleMetaRelease`，
+产物作为 **workflow artifact `shenxianyun-android-apk`** 上传（非 GitHub Release）。
+APK 按 ABI 拆分 + 一个 universal 包，文件名形如：
+
+| 用途 | Action 产物文件名 |
+| --- | --- |
+| 常用手机包（arm64） | `cmfa-<ver>-meta-arm64-v8a-release.apk` |
+| 全架构通用包 | `cmfa-<ver>-meta-universal-release.apk` |
+
+（`<ver>` 即 `versionName`，如 `2.11.33`；另有 armeabi-v7a / x86 / x86_64 包。）
+
+### 三、签名密钥（重要，要记清楚）
+
+- **签名密钥统一存放在私有仓库
+  [`abxian/shenxianyun-keys`](https://github.com/abxian/shenxianyun-keys)**，
+  绝不能提交进本公开仓库。
+- 当前 keys 仓库里已有的是**桌面端 Tauri updater 私钥**
+  （`shenxianyun-updater.key` 等）；**安卓 release keystore（`release.keystore`）也应放在此仓库统一管理。**
+- ⚠️ **现状**：本仓库根目录没有 `release.keystore`，CI 也没有配置 `SIGNING_STORE_PASSWORD` /
+  `SIGNING_KEY_ALIAS` / `SIGNING_KEY_PASSWORD` secrets，所以
+  `build.gradle.kts` 的签名逻辑会**回退到 debug 签名** ——
+  也就是目前 Action 产出的是 **debug 签名包**。
+- 要发布**正式 release 签名**包，二选一：
+  1. **本地签名**：从 `shenxianyun-keys` 取 `release.keystore`，下载 Action 产物后用
+     `apksigner sign --ks release.keystore ...` 手动签名再上传；
+  2. **CI 签名**：把 `release.keystore` 注入 CI（如 base64 secret 解码到仓库根），
+     并配置上述 3 个 `SIGNING_*` secrets，`assembleMetaRelease` 即自动用 release 签名。
+
+  签名配置见 `build.gradle.kts` 的 `signingConfigs`（读取根目录 `signing.properties` + `release.keystore`）。
+
+### 四、重命名后上传到 dufs 分发服务
+
+分发服务器：**<http://114.80.36.225:15667/shenxianyun/>**（dufs，支持 WebDAV PUT）。
+从 Action artifact 下载 zip 解压后，按下表重命名为**固定分发名**，再用 `curl -T`（PUT）上传：
+
+| 固定分发名 | 来源产物 |
+| --- | --- |
+| `神仙云.apk` | `cmfa-<ver>-meta-arm64-v8a-release.apk`（常用手机包） |
+| `shenxianyunall.apk` | `cmfa-<ver>-meta-universal-release.apk`（全架构通用包） |
+
+```bash
+DUFS=http://114.80.36.225:15667/shenxianyun
+curl -T 神仙云.apk          "$DUFS/神仙云.apk"
+curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
+# 若 dufs 开启了鉴权，加 -u 用户名:密码
+# curl -u user:pass -T 神仙云.apk "$DUFS/神仙云.apk"
+```
+
+> 桌面端的 `神仙云.exe/.dmg/.deb/.rpm` 由 PC 仓库流程产出后上传到同一目录。
+
+### 五、流程速记（每次发布都照做）
+
+1. 改代码 → 改 `build.gradle.kts` 的 `versionName` / `versionCode`（code 必须递增）。
+2. `git commit` → `git push origin main`，自动触发 Build Android APK。
+3. 等 Action 跑完 → 下载 artifact `shenxianyun-android-apk` 并解压。
+4. （如需正式签名）用 `shenxianyun-keys` 里的 keystore 签名。
+5. 重命名为 `神仙云.apk` / `shenxianyunall.apk` → `curl -T` 上传到 dufs。
