@@ -1,7 +1,6 @@
 package com.github.kr328.clash
 
 import android.app.Activity
-import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -22,11 +21,9 @@ import io.github.g00fy2.quickie.QRResult.QRMissingPermission
 import io.github.g00fy2.quickie.QRResult.QRSuccess
 import io.github.g00fy2.quickie.QRResult.QRUserCanceled
 import io.github.g00fy2.quickie.ScanQRCode
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withContext
 import java.util.*
 
 class NewProfileActivity : BaseActivity<NewProfileDesign>() {
@@ -139,33 +136,12 @@ class NewProfileActivity : BaseActivity<NewProfileDesign>() {
     }
 
     private suspend fun queryProfileProviders(): List<ProfileProvider> {
-        return withContext(Dispatchers.IO) {
-            val providers = packageManager.queryIntentActivities(
-                Intent(Intents.ACTION_PROVIDE_URL),
-                0
-            ).map {
-                val activity = it.activityInfo
-
-                val name = activity.applicationInfo.loadLabel(packageManager)
-                val summary = activity.loadLabel(packageManager)
-                val icon = activity.loadIcon(packageManager)
-                val intent = Intent(Intents.ACTION_PROVIDE_URL)
-                    .setComponent(
-                        ComponentName(
-                            activity.packageName,
-                            activity.name
-                        )
-                    )
-
-                ProfileProvider.External(name.toString(), summary.toString(), icon, intent)
-            }
-
-            listOf(
-                ProfileProvider.File(self),
-                ProfileProvider.Url(self),
-                ProfileProvider.QR(self)
-            ) + providers
-        }
+        // 神仙云只允许两种导入方式：粘贴 Clash 订阅链接（URL）或扫码导入（QR）。
+        // 不再提供「从文件导入」和「外部 App 导入」，避免普通用户被无关项干扰。
+        return listOf(
+            ProfileProvider.Url(self),
+            ProfileProvider.QR(self),
+        )
     }
 
     private fun scanResultHandler(result: QRResult) {

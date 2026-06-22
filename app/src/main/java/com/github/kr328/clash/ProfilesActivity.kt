@@ -87,8 +87,13 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
     }
 
     private suspend fun ProfilesDesign.fetch() {
+        // 隐藏到期占位配置（提取码到期时自动切换用的不可上网配置），列表只显示用户
+        // 自己导入/新建的配置文件。
+        val hiddenUuid = getSharedPreferences("jc116_activation", Context.MODE_PRIVATE)
+            .getString("expired_profile_uuid", null)
+            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         withProfile {
-            patchProfiles(queryAll())
+            patchProfiles(queryAll().filter { it.uuid != hiddenUuid })
         }
     }
 
