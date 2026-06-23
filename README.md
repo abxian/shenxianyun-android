@@ -222,11 +222,11 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 当前本地版本：
 
 ```text
-versionCode: 211035
-versionName: 2.11.35.Meta
+versionCode: 211036
+versionName: 2.11.36.Meta
 ```
 
-后台 APK 更新配置里的 `latest_version_code` 要使用 `211035` 或更高。
+后台 APK 更新配置里的 `latest_version_code` 要使用 `211036` 或更高。
 
 ## 神仙云发布与分发流程（安卓端）
 

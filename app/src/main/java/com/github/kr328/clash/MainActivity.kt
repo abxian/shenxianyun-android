@@ -468,15 +468,19 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun MainDesign.startClash() {
         val code = savedActivationCode()
-        // 提取码到期处理仅在“用提取码激活”时生效：仍允许开启开关，但切换到只含一个不可上网
-        // 节点的占位配置并弹窗提示续费；续费后由轮询自动检测并恢复正式订阅。
-        // 没有提取码（仅本地订阅链接）时跳过这套逻辑，直接按 active 配置启动。
-        if (code.isNotBlank() && !isActivationStillValid(code)) {
+        var active = withProfile { queryActive() }
+        // 到期占位只在“当前正使用提取码那条订阅（或已是到期占位）”时才触发：切到只含一个
+        // 不可上网节点的占位配置并提示续费，续费后由轮询自动恢复正式订阅。
+        // 如果用户切到了自己导入的 Clash 链接配置，即使提取码过期也照常启动上网，不再被劫持。
+        val codeProfileUuid = activationStore().getString(KEY_PROFILE_UUID, null)
+            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+        val onCodeTrack = active != null &&
+            (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
+        if (code.isNotBlank() && onCodeTrack && !isActivationStillValid(code)) {
             activateExpiredProfile()
             showExpiredDialog()
+            active = withProfile { queryActive() }
         }
-
-        val active = withProfile { queryActive() }
 
         if (active == null || !active.imported) {
             // 既没有提取码、也没有任何已导入的本地订阅：引导去本地配置页粘贴订阅链接，
