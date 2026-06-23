@@ -4,13 +4,18 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.common.util.setUUID
 import com.github.kr328.clash.common.util.ticker
 import com.github.kr328.clash.design.ProfilesDesign
 import com.github.kr328.clash.design.ui.ToastDuration
+import com.github.kr328.clash.design.util.showExceptionToast
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.util.withProfile
+import androidx.lifecycle.lifecycleScope
+import io.github.g00fy2.quickie.QRResult
+import io.github.g00fy2.quickie.ScanQRCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -21,6 +26,8 @@ import java.util.concurrent.TimeUnit
 import com.github.kr328.clash.design.R
 
 class ProfilesActivity : BaseActivity<ProfilesDesign>() {
+    private val scanLauncher = registerForActivityResult(ScanQRCode(), ::scanResultHandler)
+
     override suspend fun main() {
         val design = ProfilesDesign(this)
 
@@ -42,6 +49,10 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                     when (it) {
                         ProfilesDesign.Request.Create ->
                             startActivity(NewProfileActivity::class.intent)
+                        is ProfilesDesign.Request.SaveSubscription ->
+                            design.saveSubscription(it.url)
+                        ProfilesDesign.Request.Scan ->
+                            scanLauncher.launch(null)
                         ProfilesDesign.Request.UpdateAll ->
                             withProfile {
                                 try {
@@ -82,6 +93,52 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                         design.updateElapsed()
                     }
                 }
+            }
+        }
+    }
+
+    // 保存订阅链接（顶部输入框或扫码）：创建 URL 配置、下载并设为当前激活配置。
+    // 无需提取码，纯订阅链接即可。
+    private suspend fun ProfilesDesign.saveSubscription(rawUrl: String) {
+        val url = rawUrl.trim()
+        if (url.isEmpty()) {
+            return
+        }
+        val name = runCatching { Uri.parse(url).host }
+            .getOrNull()?.takeIf { h -> h.isNotBlank() }
+            ?: getString(R.string.new_profile)
+        try {
+            withProfile {
+                val uuid = create(Profile.Type.Url, name)
+                try {
+                    patch(uuid, name, url, 0)
+                    commit(uuid, null)
+                    queryByUUID(uuid)?.let { p -> setActive(p) }
+                } catch (e: Exception) {
+                    runCatching { delete(uuid) }
+                    throw e
+                }
+            }
+            fetch()
+            showToast(R.string.import_code_success, ToastDuration.Long)
+        } catch (e: Exception) {
+            showExceptionToast(e)
+        }
+    }
+
+    private fun scanResultHandler(result: QRResult) {
+        lifecycleScope.launch {
+            when (result) {
+                is QRResult.QRSuccess -> {
+                    val url = result.content.rawValue
+                        ?: result.content.rawBytes?.let { String(it) }.orEmpty()
+                    design?.saveSubscription(url)
+                }
+                QRResult.QRUserCanceled -> {}
+                QRResult.QRMissingPermission ->
+                    design?.showExceptionToast(getString(R.string.import_from_qr_no_permission))
+                is QRResult.QRError ->
+                    design?.showExceptionToast(getString(R.string.import_from_qr_exception))
             }
         }
     }

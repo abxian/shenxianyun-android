@@ -93,16 +93,19 @@ class MainActivity : BaseActivity<MainDesign>() {
         while (isActive) {
             select<Unit> {
                 events.onReceive {
+                    // fetch() 会通过 withClash/withProfile 等待后台服务，绑定慢时可能耗时较久。
+                    // 必须放进独立协程，否则会阻塞这个 select 事件循环，导致后续所有点击
+                    // （design.requests）排队却不被处理，界面看起来“点击失效、什么都点不了”。
                     when (it) {
                         Event.ActivityStart,
                         Event.ServiceRecreated,
-                        Event.ProfileLoaded, Event.ProfileChanged -> design.fetch()
+                        Event.ProfileLoaded, Event.ProfileChanged -> launch { design.safeFetch() }
                         Event.ClashStart -> {
-                            design.fetch()
+                            launch { design.safeFetch() }
                             launch { sendClientHeartbeat("online") }
                         }
                         Event.ClashStop -> {
-                            design.fetch()
+                            launch { design.safeFetch() }
                             lastHeartbeatAt = 0L
                             lastTrafficReportAt = 0L
                             lastReportedTrafficTotal = null
@@ -124,14 +127,16 @@ class MainActivity : BaseActivity<MainDesign>() {
                         MainDesign.Request.ImportByCode ->
                             design.showCodeImportDialog()
                         MainDesign.Request.UpdateSubscription -> {
-                            runCatching {
-                                val code = savedActivationCode()
-                                if (code.isBlank()) {
-                                    design.showCodeImportDialog()
-                                } else {
-                                    design.importSubscriptionCode(code, silent = true)
+                            val code = savedActivationCode()
+                            if (code.isBlank()) {
+                                design.showCodeImportDialog()
+                            } else {
+                                // 网络更新放进独立协程，避免阻塞事件循环导致点击失效。
+                                launch {
+                                    runCatching { design.importSubscriptionCode(code, silent = true) }
+                                        .onFailure { design.showExceptionToast(it.asException()) }
                                 }
-                            }.onFailure { design.showExceptionToast(it.asException()) }
+                            }
                         }
                         MainDesign.Request.RenewCode ->
                             openCodeStorePage()
@@ -300,6 +305,12 @@ class MainActivity : BaseActivity<MainDesign>() {
         return this as? Exception ?: RuntimeException(this)
     }
 
+    // fetch 的安全包装：吞掉异常并提示，供事件循环用 launch 调用，确保单次刷新失败
+    // 不会让协程崩溃或阻塞后续事件处理。
+    private suspend fun MainDesign.safeFetch() {
+        runCatching { fetch() }.onFailure { showExceptionToast(it.asException()) }
+    }
+
     private suspend fun MainDesign.fetch() {
         setClashRunning(clashRunning)
         setActivationCode(savedActivationCode().ifBlank { null })
@@ -457,14 +468,10 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun MainDesign.startClash() {
         val code = savedActivationCode()
-        if (code.isBlank()) {
-            showToast(R.string.import_code_required, ToastDuration.Long)
-            showCodeImportDialog()
-            return
-        }
-        // 已到期：仍允许开启开关，但切换到只含一个不可上网节点的占位配置并弹窗提示续费；
-        // 续费后由轮询自动检测并恢复正式订阅。
-        if (!isActivationStillValid(code)) {
+        // 提取码到期处理仅在“用提取码激活”时生效：仍允许开启开关，但切换到只含一个不可上网
+        // 节点的占位配置并弹窗提示续费；续费后由轮询自动检测并恢复正式订阅。
+        // 没有提取码（仅本地订阅链接）时跳过这套逻辑，直接按 active 配置启动。
+        if (code.isNotBlank() && !isActivationStillValid(code)) {
             activateExpiredProfile()
             showExpiredDialog()
         }
@@ -472,9 +479,15 @@ class MainActivity : BaseActivity<MainDesign>() {
         val active = withProfile { queryActive() }
 
         if (active == null || !active.imported) {
+            // 既没有提取码、也没有任何已导入的本地订阅：引导去本地配置页粘贴订阅链接，
+            // 或用提取码导入。
             showToast(R.string.no_profile_selected, ToastDuration.Long) {
                 setAction(R.string.import_by_code) {
-                    showCodeImportDialog()
+                    if (savedActivationCode().isBlank()) {
+                        startActivity(ProfilesActivity::class.intent)
+                    } else {
+                        showCodeImportDialog()
+                    }
                 }
             }
 

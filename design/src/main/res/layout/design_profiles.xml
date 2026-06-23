@@ -9,16 +9,12 @@
         <import type="android.view.View" />
     </data>
 
-    <androidx.coordinatorlayout.widget.CoordinatorLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         android:paddingStart="@{self.surface.insets.start}"
         android:paddingEnd="@{self.surface.insets.end}">
-
-        <include
-            android:id="@+id/main_list"
-            layout="@layout/common_recycler_list"
-            app:insets="@{self.surface.insets}" />
 
         <com.github.kr328.clash.design.view.ActivityBarLayout
             android:id="@+id/activity_bar_layout"
@@ -43,8 +39,8 @@
                     android:id="@+id/update_layout"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_centerVertical="true"
-                    android:layout_toStartOf="@id/add_view">
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true">
 
                     <ImageView
                         android:id="@+id/update_view"
@@ -54,7 +50,7 @@
                         android:layout_marginStart="@dimen/item_tailing_margin"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:clickable="true"
-                        android:contentDescription="@string/_new"
+                        android:contentDescription="@string/update_subscription"
                         android:focusable="true"
                         android:onClick="@{() -> self.requestUpdateAll()}"
                         android:padding="@dimen/toolbar_image_action_padding"
@@ -62,23 +58,60 @@
                         android:visibility="gone" />
                 </FrameLayout>
 
-                <ImageView
-                    android:id="@+id/add_view"
-                    android:layout_width="@dimen/item_tailing_component_size"
-                    android:layout_height="@dimen/item_tailing_component_size"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:layout_gravity="end|center_vertical"
-                    android:layout_marginStart="@dimen/item_tailing_margin"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:contentDescription="@string/_new"
-                    android:focusable="true"
-                    android:onClick="@{() -> self.requestCreate()}"
-                    android:padding="@dimen/toolbar_image_action_padding"
-                    android:src="@drawable/ic_baseline_add" />
-
             </RelativeLayout>
         </com.github.kr328.clash.design.view.ActivityBarLayout>
-    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+        <!-- 顶部常驻订阅输入：粘贴订阅链接 + 保存，无需提取码即可添加本地订阅。 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp">
+
+            <ImageView
+                android:id="@+id/scan_button"
+                android:layout_width="@dimen/item_tailing_component_size"
+                android:layout_height="@dimen/item_tailing_component_size"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:contentDescription="@string/import_from_qr"
+                android:focusable="true"
+                android:onClick="@{() -> self.requestScan()}"
+                android:padding="@dimen/toolbar_image_action_padding"
+                android:src="@drawable/baseline_qr_code_scanner" />
+
+            <EditText
+                android:id="@+id/subscription_input"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/profiles_subscription_hint"
+                android:imeOptions="actionDone"
+                android:inputType="textUri"
+                android:maxLines="1"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/save_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:onClick="@{() -> self.requestSaveSubscription()}"
+                android:text="@string/save" />
+        </LinearLayout>
+
+        <com.github.kr328.clash.design.view.AppRecyclerView
+            android:id="@+id/recycler_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="@{self.surface.insets.bottom}" />
+
+    </LinearLayout>
 </layout>

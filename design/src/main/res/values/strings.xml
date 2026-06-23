@@ -18,6 +18,7 @@
     <string name="proxy_empty_tips">No groups can be displayed</string>
 
     <string name="profiles">Profiles</string>
+    <string name="profiles_subscription_hint">Paste a subscription link</string>
     <string name="import_by_code">Code Subscription</string>
     <string name="code_bound">Code Bound</string>
     <string name="switch_import_code">Switch Code</string>

@@ -58,6 +58,7 @@
     <string name="profile">配置</string>
     <string name="profile_name">配置名称</string>
     <string name="profiles">配置</string>
+    <string name="profiles_subscription_hint">粘贴订阅链接</string>
     <string name="import_by_code">提取码订阅</string>
     <string name="code_bound">提取码已绑定</string>
     <string name="switch_import_code">切换提取码</string>

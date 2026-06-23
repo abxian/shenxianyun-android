@@ -20,6 +20,8 @@ class ProfilesDesign(context: Context) : Design<ProfilesDesign.Request>(context)
     sealed class Request {
         object UpdateAll : Request()
         object Create : Request()
+        data class SaveSubscription(val url: String) : Request()
+        object Scan : Request()
         data class Active(val profile: Profile) : Request()
         data class Update(val profile: Profile) : Request()
         data class Edit(val profile: Profile) : Request()
@@ -72,7 +74,7 @@ class ProfilesDesign(context: Context) : Design<ProfilesDesign.Request>(context)
 
         binding.activityBarLayout.applyFrom(context)
 
-        binding.mainList.recyclerList.also {
+        binding.recyclerList.also {
             it.bindAppBarElevation(binding.activityBarLayout)
             it.applyLinearAdapter(context, adapter)
         }
@@ -105,6 +107,22 @@ class ProfilesDesign(context: Context) : Design<ProfilesDesign.Request>(context)
 
     fun requestCreate() {
         requests.trySend(Request.Create)
+    }
+
+    // 顶部常驻输入框：读取订阅链接，非空则提交保存并清空输入框。
+    fun requestSaveSubscription() {
+        val url = binding.subscriptionInput.text?.toString()?.trim().orEmpty()
+        if (url.isEmpty()) {
+            return
+        }
+        requests.trySend(Request.SaveSubscription(url))
+        binding.subscriptionInput.text?.clear()
+        binding.subscriptionInput.clearFocus()
+    }
+
+    // 扫码导入订阅：交给 Activity 启动相机扫码，扫到链接后按订阅链接保存。
+    fun requestScan() {
+        requests.trySend(Request.Scan)
     }
 
     private fun requestActive(profile: Profile) {
