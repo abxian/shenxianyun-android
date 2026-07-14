@@ -157,7 +157,16 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
         return ""
     }
 
-    private suspend fun verifyActivationCode(code: String): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun verifyActivationCode(code: String): JSONObject =
+        try {
+            verifyActivationCodeOnce(code)
+        } catch (e: java.io.IOException) {
+            // 当前 API 线路失联：自动切到下一条可用线路后重试一次。
+            EndpointResolver.rotate()
+            verifyActivationCodeOnce(code)
+        }
+
+    private suspend fun verifyActivationCodeOnce(code: String): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val clientId = stableClientId()
         val url = "${EndpointResolver.apiBase()}/api/verify/$encoded?import=1&client_id=${URLEncoder.encode(clientId, "UTF-8")}"

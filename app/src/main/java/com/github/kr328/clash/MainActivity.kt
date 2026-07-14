@@ -537,7 +537,16 @@ class MainActivity : BaseActivity<MainDesign>() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
-    private suspend fun verifyActivationCode(code: String, countImport: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun verifyActivationCode(code: String, countImport: Boolean = false): JSONObject =
+        try {
+            verifyActivationCodeOnce(code, countImport)
+        } catch (e: Exception) {
+            // 当前 API 线路失联（如主域名挂掉）：自动切到下一条可用线路后重试一次。
+            EndpointResolver.rotate()
+            verifyActivationCodeOnce(code, countImport)
+        }
+
+    private suspend fun verifyActivationCodeOnce(code: String, countImport: Boolean): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val importParams = if (countImport) {
             "?import=1&client_id=${URLEncoder.encode(stableClientId(), "UTF-8")}"

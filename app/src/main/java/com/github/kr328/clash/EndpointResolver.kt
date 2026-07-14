@@ -17,12 +17,20 @@ import java.net.URL
  */
 object EndpointResolver {
     /** 内置兜底默认值（发现源全挂时最后的锚点）。 */
-    const val DEFAULT_API_BASE = "https://sub.jc116.com"
+    const val DEFAULT_API_BASE = "https://sxnn.de"
 
-    // 静态发现锚点（互为备份）。sxnn.de 是 app 反代域名，走 /api/endpoints 动态兜底。
+    /** 发现失败时的内置候选（按序探测），避免单个默认域名挂掉即全灭。 */
+    private val BUILTIN_API_BASES = listOf(
+        "https://sxnn.de",
+        "http://114.80.36.225:5010",
+        "https://sub.jc116.com",
+    )
+
+    // 发现锚点：第一个是 web 后台「保存并发布」自动上传的 endpoints.json（唯一真源，dufs），
+    // 后两个是备份（GitHub 手动同步、app 动态接口）。
     private val DISCOVERY_URLS = listOf(
-        "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
         "http://114.80.36.225:5011/endpoints.json",
+        "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
         "https://sxnn.de/api/endpoints",
     )
 
@@ -107,7 +115,7 @@ object EndpointResolver {
 
     /** 逐个探测 api_bases，第一个通的设为 active。 */
     private fun pickApiBase() {
-        val bases = cachedBases().ifEmpty { listOf(DEFAULT_API_BASE) }
+        val bases = cachedBases().ifEmpty { BUILTIN_API_BASES }
         for (base in bases) {
             if (probe(base)) {
                 prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
@@ -130,7 +138,7 @@ object EndpointResolver {
     suspend fun rotate(): String = withContext(Dispatchers.IO) {
         val bad = apiBase()
         try {
-            for (base in cachedBases().filter { it != bad }) {
+            for (base in cachedBases().ifEmpty { BUILTIN_API_BASES }.filter { it != bad }) {
                 if (probe(base)) {
                     prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
                     return@withContext base
