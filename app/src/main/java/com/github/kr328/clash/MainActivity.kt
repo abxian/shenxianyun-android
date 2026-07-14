@@ -49,7 +49,6 @@ import com.github.kr328.clash.design.R
 
 class MainActivity : BaseActivity<MainDesign>() {
     private companion object {
-        const val SUBSCRIPTION_BASE_URL = "https://sub.jc116.com"
         const val ACTIVATION_STORE = "jc116_activation"
         const val KEY_CODE = "code"
         const val KEY_EXPIRES_AT = "expires_at"
@@ -70,6 +69,10 @@ class MainActivity : BaseActivity<MainDesign>() {
     override suspend fun main() {
         val design = MainDesign(this)
         stableClientId()
+
+        // 端点发现：后台拉取 endpoints.json 并探测可用 API 基址（失败静默，用缓存/内置默认）。
+        // 必须放独立协程，绝不能阻塞下面的 select 事件循环。
+        launch { EndpointResolver.initialize() }
 
         setContentDesign(design)
 
@@ -204,6 +207,8 @@ class MainActivity : BaseActivity<MainDesign>() {
                         launch {
                             val ok = runCatching { design.checkSubscriptionUpdate() }.isSuccess
                             subscriptionFailures = if (ok) 0 else minOf(subscriptionFailures + 1, 4)
+                            // 失败可能是当前 API 线路失联：后台切到下一条可用线路（api_bases 顺延）。
+                            if (!ok) runCatching { EndpointResolver.rotate() }
                             val backoff = minOf(
                                 UPDATE_CHECK_INTERVAL_MILLIS shl subscriptionFailures,
                                 UPDATE_CHECK_MAX_INTERVAL_MILLIS,
@@ -244,7 +249,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             "app_version=${URLEncoder.encode(appVersion, "UTF-8")}",
             "device_name=${URLEncoder.encode("${Build.BRAND} ${Build.MODEL}", "UTF-8")}",
         ).joinToString("&")
-        val connection = (URL("$SUBSCRIPTION_BASE_URL/api/client/$path/$encoded?$params").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("${EndpointResolver.apiBase()}/api/client/$path/$encoded?$params").openConnection() as HttpURLConnection).apply {
             connectTimeout = 5000
             readTimeout = 5000
             requestMethod = "GET"
@@ -275,7 +280,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             put("upload_bytes", 0)
             put("download_bytes", deltaBytes)
         }.toString().toByteArray(Charsets.UTF_8)
-        val connection = (URL("$SUBSCRIPTION_BASE_URL/api/client/traffic/$encoded").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("${EndpointResolver.apiBase()}/api/client/traffic/$encoded").openConnection() as HttpURLConnection).apply {
             connectTimeout = 5000
             readTimeout = 5000
             requestMethod = "POST"
@@ -525,9 +530,9 @@ class MainActivity : BaseActivity<MainDesign>() {
         val code = savedActivationCode()
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val url = if (code.isBlank()) {
-            "$SUBSCRIPTION_BASE_URL/pay?action=new"
+            "${EndpointResolver.apiBase()}/pay?action=new"
         } else {
-            "$SUBSCRIPTION_BASE_URL/pay?action=renew&code=$encoded"
+            "${EndpointResolver.apiBase()}/pay?action=renew&code=$encoded"
         }
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
@@ -539,7 +544,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         } else {
             ""
         }
-        val connection = (URL("$SUBSCRIPTION_BASE_URL/api/verify/$encoded$importParams").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("${EndpointResolver.apiBase()}/api/verify/$encoded$importParams").openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000
             readTimeout = 8000
             requestMethod = "GET"
@@ -572,7 +577,7 @@ class MainActivity : BaseActivity<MainDesign>() {
     private suspend fun queryUpdateVersion(code: String): Long? = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val clientId = URLEncoder.encode(stableClientId(), "UTF-8")
-        val connection = (URL("$SUBSCRIPTION_BASE_URL/api/update-state/$encoded?client_id=$clientId").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("${EndpointResolver.apiBase()}/api/update-state/$encoded?client_id=$clientId").openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000
             readTimeout = 8000
             requestMethod = "GET"
@@ -598,7 +603,7 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun MainDesign.checkAppUpdate() {
         val update = withContext(Dispatchers.IO) {
-            val connection = (URL("$SUBSCRIPTION_BASE_URL/api/app-version").openConnection() as HttpURLConnection).apply {
+            val connection = (URL("${EndpointResolver.apiBase()}/api/app-version").openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000
                 readTimeout = 8000
                 requestMethod = "GET"

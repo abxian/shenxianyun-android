@@ -32,7 +32,6 @@ import com.github.kr328.clash.design.R
 
 class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
     private companion object {
-        const val SUBSCRIPTION_BASE_URL = "https://sub.jc116.com"
         const val ACTIVATION_STORE = "jc116_activation"
         const val KEY_CODE = "code"
         const val KEY_EXPIRES_AT = "expires_at"
@@ -161,7 +160,7 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
     private suspend fun verifyActivationCode(code: String): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val clientId = stableClientId()
-        val url = "$SUBSCRIPTION_BASE_URL/api/verify/$encoded?import=1&client_id=${URLEncoder.encode(clientId, "UTF-8")}"
+        val url = "${EndpointResolver.apiBase()}/api/verify/$encoded?import=1&client_id=${URLEncoder.encode(clientId, "UTF-8")}"
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000
             readTimeout = 8000
