@@ -32,6 +32,9 @@ import com.github.kr328.clash.util.withClash
 import com.github.kr328.clash.util.withProfile
 import com.github.kr328.clash.core.bridge.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
@@ -72,7 +75,10 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         // 端点发现：后台拉取 endpoints.json 并探测可用 API 基址（失败静默，用缓存/内置默认）。
         // 必须放独立协程，绝不能阻塞下面的 select 事件循环。
-        launch { EndpointResolver.initialize() }
+        launch {
+            EndpointResolver.initialize()
+            refreshLineStatus(design)
+        }
 
         setContentDesign(design)
 
@@ -143,6 +149,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                         }
                         MainDesign.Request.RenewCode ->
                             openCodeStorePage()
+                        MainDesign.Request.SelectLine ->
+                            // 探测+弹窗都是耗时操作，放独立协程，不阻塞事件循环。
+                            launch { showLineSelector(design) }
                         MainDesign.Request.SetRuleMode ->
                             runCatching { design.patchMode(TunnelState.Mode.Rule) }
                                 .onFailure { design.showExceptionToast(it.asException()) }
@@ -221,6 +230,45 @@ class MainActivity : BaseActivity<MainDesign>() {
                 }
             }
         }
+    }
+
+    // ===== 服务线路（web/api_bases 地址）：顶部显示当前线路，点开可探测/切换 =====
+
+    /** 刷新顶部线路状态文本，如「服务线路：线路2 ▾」。 */
+    private suspend fun refreshLineStatus(design: MainDesign) {
+        val bases = EndpointResolver.basesForUi()
+        val active = EndpointResolver.apiBase()
+        val index = bases.indexOf(active)
+        val label = if (index >= 0) "线路${index + 1}" else "自动"
+        design.setLineStatus("服务线路：$label ▾")
+    }
+
+    /** 探测全部线路连通性并弹窗选择，点选后立即生效。 */
+    private suspend fun showLineSelector(design: MainDesign) {
+        val bases = EndpointResolver.basesForUi()
+        val active = EndpointResolver.apiBase()
+        design.setLineStatus("服务线路：检测中…")
+        // 并发探测所有线路
+        val results = withContext(Dispatchers.IO) {
+            coroutineScope {
+                bases.map { base -> async { EndpointResolver.probeBase(base) } }.awaitAll()
+            }
+        }
+        val items = bases.mapIndexed { i, base ->
+            val mark = if (results[i]) "✓ 可用" else "✕ 不通"
+            val cur = if (base == active) "（当前）" else ""
+            "线路${i + 1}  $mark$cur\n$base"
+        }
+        val picked = design.showLineSelector(items, bases.indexOf(active))
+        if (picked != null && picked in bases.indices) {
+            if (results[picked]) {
+                EndpointResolver.setActive(bases[picked])
+                design.showToast("已切换到线路${picked + 1}", ToastDuration.Short)
+            } else {
+                design.showToast("线路${picked + 1}不通，未切换", ToastDuration.Short)
+            }
+        }
+        refreshLineStatus(design)
     }
 
     private fun stableClientId(): String {

@@ -37,6 +37,10 @@
             name="hasProviders"
             type="boolean" />
 
+        <variable
+            name="lineStatus"
+            type="String" />
+
         <import type="android.view.View" />
         <import type="com.github.kr328.clash.design.MainDesign.Request" />
     </data>
@@ -90,6 +94,19 @@
                     android:text="智能加速 · 稳定连接"
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
                     android:textColor="@color/sxy_text_muted" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:onClick="@{() -> self.request(Request.SelectLine)}"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:text="@{lineStatus}"
+                    android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+                    android:textColor="@android:color/white"
+                    android:visibility="@{lineStatus == null ? View.GONE : View.VISIBLE}" />
 
                 <FrameLayout
                     android:layout_width="188dp"

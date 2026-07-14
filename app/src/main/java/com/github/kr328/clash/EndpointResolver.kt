@@ -134,6 +134,19 @@ object EndpointResolver {
         }
     }
 
+    /** 当前全部候选线路（发现缓存优先，否则内置列表），给线路选择 UI 用。 */
+    fun basesForUi(): List<String> = cachedBases().ifEmpty { BUILTIN_API_BASES }
+
+    /** 手动指定当前线路（线路选择弹窗点选时用）。 */
+    fun setActive(base: String) {
+        normalizeBase(base).takeIf { it.isNotEmpty() }?.let {
+            prefs.edit().putString(KEY_ACTIVE_BASE, it).apply()
+        }
+    }
+
+    /** 探测单条线路是否可用（UI 用，IO 线程执行）。 */
+    suspend fun probeBase(base: String): Boolean = withContext(Dispatchers.IO) { probe(base) }
+
     /** 请求失败时调用：把当前 active 基址作废并顺延到下一条可用线路。IO 线程执行。 */
     suspend fun rotate(): String = withContext(Dispatchers.IO) {
         val bad = apiBase()

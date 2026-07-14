@@ -19,6 +19,7 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         ImportByCode,
         UpdateSubscription,
         RenewCode,
+        SelectLine,
         SetRuleMode,
         SetGlobalMode,
         OpenProxy,
@@ -78,6 +79,30 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
             binding.hasProviders = has
         }
     }
+
+    suspend fun setLineStatus(text: String?) {
+        withContext(Dispatchers.Main) {
+            binding.lineStatus = text
+        }
+    }
+
+    /**
+     * 线路选择弹窗：items 形如「线路1 ✓ (当前)」，返回点选的下标，取消返回 null。
+     */
+    suspend fun showLineSelector(items: List<CharSequence>, current: Int): Int? =
+        withContext(Dispatchers.Main) {
+            val result = kotlinx.coroutines.CompletableDeferred<Int?>()
+            AlertDialog.Builder(context)
+                .setTitle("选择服务线路")
+                .setSingleChoiceItems(items.toTypedArray(), current) { dialog, which ->
+                    result.complete(which)
+                    dialog.dismiss()
+                }
+                .setNegativeButton("取消", null)
+                .setOnDismissListener { if (!result.isCompleted) result.complete(null) }
+                .show()
+            result.await()
+        }
 
     suspend fun showAbout(versionName: String) {
         withContext(Dispatchers.Main) {
