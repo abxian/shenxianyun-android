@@ -159,24 +159,30 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
 
     private suspend fun verifyActivationCode(code: String): JSONObject =
         try {
-            verifyActivationCodeOnce(code)
+            verifyActivationCodeOnce(code, useBootstrap = false)
         } catch (e: java.io.IOException) {
-            // 当前 API 线路失联：自动切到下一条可用线路后重试一次。
+            // 当前 API 线路失联：切到下一条可用线路重试。
             EndpointResolver.rotate()
-            verifyActivationCodeOnce(code)
+            try {
+                verifyActivationCodeOnce(code, useBootstrap = false)
+            } catch (e2: java.io.IOException) {
+                // 最后一层：经后台下发的兜底代理去验证。
+                verifyActivationCodeOnce(code, useBootstrap = true)
+            }
         }
 
-    private suspend fun verifyActivationCodeOnce(code: String): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun verifyActivationCodeOnce(code: String, useBootstrap: Boolean): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val clientId = stableClientId()
         val url = "${EndpointResolver.apiBase()}/api/verify/$encoded?import=1&client_id=${URLEncoder.encode(clientId, "UTF-8")}"
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "Shenxianyun-Android/ExternalImport")
-            setRequestProperty("X-Client-Id", clientId)
-        }
+        val connection = (if (useBootstrap) EndpointResolver.openViaBootstrap(url, 8000) else null)
+            ?: (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8000
+                readTimeout = 8000
+                requestMethod = "GET"
+            }
+        connection.setRequestProperty("User-Agent", "Shenxianyun-Android/ExternalImport")
+        connection.setRequestProperty("X-Client-Id", clientId)
         try {
             if (connection.responseCode !in 200..299) {
                 throw IllegalStateException(getString(R.string.import_code_invalid))

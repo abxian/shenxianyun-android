@@ -585,26 +585,38 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun verifyActivationCode(code: String, countImport: Boolean = false): JSONObject =
         try {
-            verifyActivationCodeOnce(code, countImport)
+            verifyActivationCodeOnce(code, countImport, useBootstrap = false)
         } catch (e: Exception) {
-            // 当前 API 线路失联（如主域名挂掉）：自动切到下一条可用线路后重试一次。
+            // 当前 API 线路失联（如主域名挂掉）：切到下一条可用线路重试。
             EndpointResolver.rotate()
-            verifyActivationCodeOnce(code, countImport)
+            try {
+                verifyActivationCodeOnce(code, countImport, useBootstrap = false)
+            } catch (e2: Exception) {
+                // 最后一层：经后台下发的兜底代理去验证（解决直连全挂/首装连不上）。
+                verifyActivationCodeOnce(code, countImport, useBootstrap = true)
+            }
         }
 
-    private suspend fun verifyActivationCodeOnce(code: String, countImport: Boolean): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun verifyActivationCodeOnce(
+        code: String,
+        countImport: Boolean,
+        useBootstrap: Boolean,
+    ): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
         val importParams = if (countImport) {
             "?import=1&client_id=${URLEncoder.encode(stableClientId(), "UTF-8")}"
         } else {
             ""
         }
-        val connection = (URL("${EndpointResolver.apiBase()}/api/verify/$encoded$importParams").openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
-            requestMethod = "GET"
-            setRequestProperty("X-Client-Id", stableClientId())
-        }
+        val url = "${EndpointResolver.apiBase()}/api/verify/$encoded$importParams"
+        // useBootstrap=true 时经兜底代理打开；代理没配置则退回直连。
+        val connection = (if (useBootstrap) EndpointResolver.openViaBootstrap(url, 8000) else null)
+            ?: (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8000
+                readTimeout = 8000
+                requestMethod = "GET"
+            }
+        connection.setRequestProperty("X-Client-Id", stableClientId())
 
         try {
             if (connection.responseCode !in 200..299) {

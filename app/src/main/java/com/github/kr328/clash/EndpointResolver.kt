@@ -39,6 +39,7 @@ object EndpointResolver {
     private const val KEY_ACTIVE_BASE = "api_base_active"
     private const val KEY_SUB_BASE = "sub_base"
     private const val KEY_DOWNLOAD_BASE = "download_base"
+    private const val KEY_BOOTSTRAP_PROXY = "bootstrap_proxy"
 
     private const val DISCOVERY_TIMEOUT_MS = 8_000
     private const val PROBE_TIMEOUT_MS = 5_000
@@ -64,6 +65,40 @@ object EndpointResolver {
     }
 
     fun downloadBase(): String = normalizeBase(prefs.getString(KEY_DOWNLOAD_BASE, null))
+
+    /** 后台下发的兜底代理（http://[user:pass@]host:port，也支持 socks5://）。无则空串。 */
+    fun bootstrapProxy(): String {
+        val v = prefs.getString(KEY_BOOTSTRAP_PROXY, null)?.trim() ?: return ""
+        return if (Regex("^(https?|socks5h?)://").containsMatchIn(v)) v else ""
+    }
+
+    /** 用兜底代理打开一个连接；无代理配置时退回直连。解析 http/socks5 与可选账号密码。 */
+    fun openViaBootstrap(url: String, timeoutMs: Int): HttpURLConnection? {
+        val proxyUrl = bootstrapProxy().ifEmpty { return null }
+        return try {
+            // 用 java.net.URI 稳妥解析 scheme/host/port/userinfo
+            val uri = java.net.URI(proxyUrl)
+            val type = if (uri.scheme.startsWith("socks", true))
+                java.net.Proxy.Type.SOCKS else java.net.Proxy.Type.HTTP
+            val port = if (uri.port > 0) uri.port else if (type == java.net.Proxy.Type.SOCKS) 1080 else 8080
+            val proxy = java.net.Proxy(type, java.net.InetSocketAddress(uri.host, port))
+            val conn = (URL(url).openConnection(proxy) as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = timeoutMs
+                readTimeout = timeoutMs
+            }
+            // HTTP 代理的账号密码走 Proxy-Authorization 头（Basic）
+            val userInfo = uri.userInfo
+            if (type == java.net.Proxy.Type.HTTP && !userInfo.isNullOrEmpty()) {
+                val token = android.util.Base64.encodeToString(
+                    userInfo.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                conn.setRequestProperty("Proxy-Authorization", "Basic $token")
+            }
+            conn
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun httpGet(url: String, timeoutMs: Int): Pair<Int, String> {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -99,6 +134,7 @@ object EndpointResolver {
                     .putString(KEY_API_BASES, bases.joinToString("\n"))
                     .putString(KEY_SUB_BASE, normalizeBase(json.optString("sub_base")))
                     .putString(KEY_DOWNLOAD_BASE, normalizeBase(json.optString("download_base")))
+                    .putString(KEY_BOOTSTRAP_PROXY, json.optString("bootstrap_proxy").trim())
                     .apply()
                 return
             } catch (_: Exception) {
