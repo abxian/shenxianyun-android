@@ -86,21 +86,102 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         }
     }
 
+    /** 线路条目：label 如「神仙云1」，ok=连通性，current=当前使用。 */
+    data class LineItem(val label: String, val ok: Boolean, val current: Boolean)
+
     /**
-     * 线路选择弹窗：items 形如「线路1 ✓ (当前)」，返回点选的下标，取消返回 null。
+     * 线路选择弹窗（圆角卡片样式）：每行 = 状态点 + 名称 + 可用性，点选返回下标，取消返回 null。
+     * 不展示具体网址。
      */
-    suspend fun showLineSelector(items: List<CharSequence>, current: Int): Int? =
+    suspend fun showLineSelector(items: List<LineItem>): Int? =
         withContext(Dispatchers.Main) {
             val result = kotlinx.coroutines.CompletableDeferred<Int?>()
-            AlertDialog.Builder(context)
-                .setTitle("选择服务线路")
-                .setSingleChoiceItems(items.toTypedArray(), current) { dialog, which ->
-                    result.complete(which)
-                    dialog.dismiss()
+            val density = context.resources.displayMetrics.density
+            fun dp(v: Int) = (v * density).toInt()
+
+            val container = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            }
+
+            val title = android.widget.TextView(context).apply {
+                text = "选择服务线路"
+                textSize = 17f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(16), dp(14), dp(16), dp(6))
+            }
+            container.addView(title)
+
+            val hint = android.widget.TextView(context).apply {
+                text = "自动选择可用线路，点选可手动切换"
+                textSize = 12f
+                alpha = 0.6f
+                setPadding(dp(16), 0, dp(16), dp(10))
+            }
+            container.addView(hint)
+
+            lateinit var dialog: AlertDialog
+
+            items.forEachIndexed { index, item ->
+                val row = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(dp(16), dp(14), dp(16), dp(14))
+                    val tv = android.util.TypedValue()
+                    context.theme.resolveAttribute(
+                        android.R.attr.selectableItemBackground, tv, true,
+                    )
+                    setBackgroundResource(tv.resourceId)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        result.complete(index)
+                        dialog.dismiss()
+                    }
                 }
-                .setNegativeButton("取消", null)
+
+                // 状态点：绿=可用 红=不通
+                val dot = android.widget.TextView(context).apply {
+                    text = "●"
+                    textSize = 13f
+                    setTextColor(if (item.ok) 0xFF2ECC8F.toInt() else 0xFFE05B5B.toInt())
+                    setPadding(0, 0, dp(12), 0)
+                }
+                row.addView(dot)
+
+                val name = android.widget.TextView(context).apply {
+                    text = item.label
+                    textSize = 15f
+                    if (item.current) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
+                    )
+                }
+                row.addView(name)
+
+                val state = android.widget.TextView(context).apply {
+                    text = buildString {
+                        append(if (item.ok) "可用" else "不通")
+                        if (item.current) append(" · 当前")
+                    }
+                    textSize = 12f
+                    alpha = if (item.ok) 0.75f else 0.45f
+                    if (item.current) setTextColor(0xFF2ECC8F.toInt())
+                }
+                row.addView(state)
+
+                container.addView(row)
+            }
+
+            val scroll = android.widget.ScrollView(context).apply { addView(container) }
+
+            dialog = AlertDialog.Builder(context)
+                .setView(scroll)
                 .setOnDismissListener { if (!result.isCompleted) result.complete(null) }
-                .show()
+                .create()
+            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_line_dialog)
+            dialog.window?.setWindowAnimations(android.R.style.Animation_Dialog)
+            dialog.show()
             result.await()
         }
 

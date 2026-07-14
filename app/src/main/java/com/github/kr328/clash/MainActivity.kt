@@ -234,12 +234,12 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     // ===== 服务线路（web/api_bases 地址）：顶部显示当前线路，点开可探测/切换 =====
 
-    /** 刷新顶部线路状态文本，如「服务线路：线路2 ▾」。 */
+    /** 刷新顶部线路状态文本，如「服务线路：神仙云2 ▾」。不展示具体网址。 */
     private suspend fun refreshLineStatus(design: MainDesign) {
         val bases = EndpointResolver.basesForUi()
         val active = EndpointResolver.apiBase()
         val index = bases.indexOf(active)
-        val label = if (index >= 0) "线路${index + 1}" else "自动"
+        val label = if (index >= 0) "神仙云${index + 1}" else "自动"
         design.setLineStatus("服务线路：$label ▾")
     }
 
@@ -255,17 +255,15 @@ class MainActivity : BaseActivity<MainDesign>() {
             }
         }
         val items = bases.mapIndexed { i, base ->
-            val mark = if (results[i]) "✓ 可用" else "✕ 不通"
-            val cur = if (base == active) "（当前）" else ""
-            "线路${i + 1}  $mark$cur\n$base"
+            MainDesign.LineItem("神仙云${i + 1}", results[i], base == active)
         }
-        val picked = design.showLineSelector(items, bases.indexOf(active))
+        val picked = design.showLineSelector(items)
         if (picked != null && picked in bases.indices) {
             if (results[picked]) {
                 EndpointResolver.setActive(bases[picked])
-                design.showToast("已切换到线路${picked + 1}", ToastDuration.Short)
+                design.showToast("已切换到神仙云${picked + 1}", ToastDuration.Short)
             } else {
-                design.showToast("线路${picked + 1}不通，未切换", ToastDuration.Short)
+                design.showToast("神仙云${picked + 1}不通，未切换", ToastDuration.Short)
             }
         }
         refreshLineStatus(design)
