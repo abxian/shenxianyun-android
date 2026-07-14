@@ -288,7 +288,7 @@ APK 按 ABI 拆分 + 一个 universal 包，文件名形如：
 
 ### 四、重命名后上传到 dufs 分发服务
 
-分发服务器：**<http://114.80.36.225:15667/shenxianyun/>**（dufs，支持 WebDAV PUT）。
+分发服务器：**<http://114.80.36.225:5011/sxy/>**（dufs，支持 WebDAV PUT）。
 从 Action artifact 下载 zip 解压后，按下表重命名为**固定分发名**，再用 `curl -T`（PUT）上传：
 
 | 固定分发名 | 来源产物 |
@@ -297,10 +297,10 @@ APK 按 ABI 拆分 + 一个 universal 包，文件名形如：
 | `shenxianyunall.apk` | `cmfa-<ver>-meta-universal-release.apk`（全架构通用包） |
 
 ```bash
-DUFS=http://114.80.36.225:15667/shenxianyun
+DUFS=http://114.80.36.225:5011/sxy
 curl -T 神仙云.apk          "$DUFS/神仙云.apk"
 curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
-# 若 dufs 开启了鉴权，加 -u 用户名:密码
+# dufs 上传需鉴权：-u shenxianyun:shenxianyun@123（匿名只读）
 # curl -u user:pass -T 神仙云.apk "$DUFS/神仙云.apk"
 ```
 
