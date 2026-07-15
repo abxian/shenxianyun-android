@@ -29,6 +29,7 @@ object EndpointResolver {
     // 发现锚点：第一个是 web 后台「保存并发布」自动上传的 endpoints.json（唯一真源，dufs），
     // 后两个是备份（GitHub 手动同步、app 动态接口）。
     private val DISCOVERY_URLS = listOf(
+        "https://sxy.sxnn.de:5443/endpoints.json",
         "http://114.80.36.225:5011/endpoints.json",
         "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
         "https://sxnn.de/api/endpoints",
