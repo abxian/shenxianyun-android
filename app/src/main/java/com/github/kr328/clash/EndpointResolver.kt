@@ -16,15 +16,24 @@ import java.net.URL
  * 发现失败 → 用本地缓存；再没有 → 用内置默认。任何一步都不阻塞启动、不抛异常。
  */
 object EndpointResolver {
-    /** 内置兜底默认值（发现源全挂时最后的锚点）。 */
-    const val DEFAULT_API_BASE = "https://sxnn.de"
-
-    /** 发现失败时的内置候选（按序探测），避免单个默认域名挂掉即全灭。 */
-    private val BUILTIN_API_BASES = listOf(
-        "https://sxnn.de",
-        "http://114.80.36.225:5010",
-        "https://sub.jc116.com",
+    /** 写死的两条主线路：神仙云1=国内直连域名, 神仙云2=国外(CF)域名。始终排最前。 */
+    private val PINNED_API_BASES = listOf(
+        "https://api.sxnn.de:5443", // 神仙云1 国内直连
+        "https://sxnn.de",          // 神仙云2 国外(CF)
     )
+
+    /** 写死主线路条数（神仙云1/2），UI 判断"前两条是否都不通"用。 */
+    const val PINNED_COUNT = 2
+
+    /** 内置兜底默认值（发现源全挂时用第一条写死线路）。 */
+    const val DEFAULT_API_BASE = "https://api.sxnn.de:5443"
+
+    /** 完整线路 = 写死主线路(神仙云1/2) + 发现的 api_bases(神仙云3/4…, 去重排后)。 */
+    private fun allApiBases(): List<String> {
+        val merged = PINNED_API_BASES.toMutableList()
+        for (b in cachedBases()) if (b !in merged) merged.add(b)
+        return merged
+    }
 
     // 发现锚点：第一个是 web 后台「保存并发布」自动上传的 endpoints.json（唯一真源，dufs），
     // 后两个是备份（GitHub 手动同步、app 动态接口）。
@@ -62,7 +71,7 @@ object EndpointResolver {
     /** 当前应使用的 API 基址：探测出的可用地址 > 缓存列表第一个 > 内置默认。同步、永不抛错。 */
     fun apiBase(): String {
         normalizeBase(prefs.getString(KEY_ACTIVE_BASE, null)).takeIf { it.isNotEmpty() }?.let { return it }
-        return cachedBases().firstOrNull() ?: DEFAULT_API_BASE
+        return allApiBases().firstOrNull() ?: DEFAULT_API_BASE
     }
 
     fun downloadBase(): String = normalizeBase(prefs.getString(KEY_DOWNLOAD_BASE, null))
@@ -152,7 +161,7 @@ object EndpointResolver {
 
     /** 逐个探测 api_bases，第一个通的设为 active。 */
     private fun pickApiBase() {
-        val bases = cachedBases().ifEmpty { BUILTIN_API_BASES }
+        val bases = allApiBases()
         for (base in bases) {
             if (probe(base)) {
                 prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
@@ -172,7 +181,7 @@ object EndpointResolver {
     }
 
     /** 当前全部候选线路（发现缓存优先，否则内置列表），给线路选择 UI 用。 */
-    fun basesForUi(): List<String> = cachedBases().ifEmpty { BUILTIN_API_BASES }
+    fun basesForUi(): List<String> = allApiBases()
 
     /** 手动指定当前线路（线路选择弹窗点选时用）。 */
     fun setActive(base: String) {
@@ -188,7 +197,7 @@ object EndpointResolver {
     suspend fun rotate(): String = withContext(Dispatchers.IO) {
         val bad = apiBase()
         try {
-            for (base in cachedBases().ifEmpty { BUILTIN_API_BASES }.filter { it != bad }) {
+            for (base in allApiBases().filter { it != bad }) {
                 if (probe(base)) {
                     prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
                     return@withContext base

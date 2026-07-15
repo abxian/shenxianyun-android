@@ -234,13 +234,21 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     // ===== 服务线路（web/api_bases 地址）：顶部显示当前线路，点开可探测/切换 =====
 
-    /** 刷新顶部线路状态文本，如「服务线路：神仙云2 ▾」。不展示具体网址。 */
+    /**
+     * 线路状态：平时隐藏。只有写死的两条主线路（神仙云1 国内 + 神仙云2 国外）都探测不通时，
+     * 才显示「服务线路异常，点此切换」入口，让用户手动切到神仙云3/4。
+     */
     private suspend fun refreshLineStatus(design: MainDesign) {
-        val bases = EndpointResolver.basesForUi()
-        val active = EndpointResolver.apiBase()
-        val index = bases.indexOf(active)
-        val label = if (index >= 0) "神仙云${index + 1}" else "自动"
-        design.setLineStatus("服务线路：$label ▾")
+        val pinned = EndpointResolver.basesForUi().take(EndpointResolver.PINNED_COUNT)
+        if (pinned.isEmpty()) { design.setLineStatus(null); return }
+        val anyOk = withContext(Dispatchers.IO) {
+            coroutineScope { pinned.map { async { EndpointResolver.probeBase(it) } }.awaitAll() }
+        }.any { it }
+        if (anyOk) {
+            design.setLineStatus(null)                       // 主线路可用，隐藏
+        } else {
+            design.setLineStatus("服务线路异常，点此切换 ▾")   // 两条主线路都不通，显示切换
+        }
     }
 
     /** 探测全部线路连通性并弹窗选择，点选后立即生效。 */
