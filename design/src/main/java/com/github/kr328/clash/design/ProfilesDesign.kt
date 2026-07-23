@@ -15,8 +15,12 @@ import com.github.kr328.clash.design.util.*
 import com.github.kr328.clash.service.model.Profile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
-class ProfilesDesign(context: Context) : Design<ProfilesDesign.Request>(context) {
+class ProfilesDesign(
+    context: Context,
+    private val managedProfileUuid: UUID?,
+) : Design<ProfilesDesign.Request>(context) {
     sealed class Request {
         object UpdateAll : Request()
         object Create : Request()
@@ -89,6 +93,7 @@ class ProfilesDesign(context: Context) : Design<ProfilesDesign.Request>(context)
         binding.master = this
         binding.self = dialog
         binding.profile = profile
+        binding.managed = profile.uuid == managedProfileUuid
 
         dialog.setContentView(binding.root)
         dialog.show()

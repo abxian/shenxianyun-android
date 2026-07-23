@@ -28,6 +28,9 @@
     <string name="import_code_hint">Code</string>
     <string name="import_code_empty">Please enter a code</string>
     <string name="import_code_fetching">Fetching subscription...</string>
+    <string name="import_code_retrying">Network is unstable. Retrying automatically (%1$d/%2$d)…</string>
+    <string name="import_code_failed_after_retries">The network is unstable and automatic retries failed. Please try again later.</string>
+    <string name="managed_profile_update_failed">Update failed because the network is unstable. Tap Update to retry.</string>
     <string name="import_code_success">Subscription imported</string>
     <string name="import_code_required">Please enter a subscription code first</string>
     <string name="import_code_expired">Subscription code expired</string>
@@ -35,6 +38,11 @@
     <string name="import_code_expired_message">Your subscription code has expired. Switched to the \"renew to continue\" placeholder node, so there is no internet for now.\nRenew and re-import the code to restore; once renewed it will also be detected and restored automatically.</string>
     <string name="subscription_recovered">Code renewed, subscription restored</string>
     <string name="manage_profiles">Manage profiles (switch / import)</string>
+    <string name="manage_profiles_summary">Switch profiles, import links, and update nodes</string>
+    <string name="app_settings_summary">Appearance, behavior, and notification options</string>
+    <string name="network_settings_summary">VPN routing, DNS, and app access control</string>
+    <string name="override_settings_summary">Advanced core ports and runtime overrides</string>
+    <string name="meta_settings_summary">Performance and Meta core enhancements</string>
     <string name="import_code_invalid">Subscription code invalid</string>
     <string name="select_node">Select Node</string>
     <string name="select_node_start_first">Start proxy before selecting node</string>

@@ -22,6 +22,12 @@ class PropertiesActivity : BaseActivity<PropertiesDesign>() {
         setResult(RESULT_CANCELED)
 
         val uuid = intent.uuid ?: return finish()
+        // 受管配置（提取码/神仙云一键导入）不进入属性编辑页，避免真实订阅地址
+        // 通过 URL、复制或文件浏览入口暴露；该配置只允许在配置列表执行更新。
+        if (isManagedProfile(uuid)) {
+            withProfile { update(uuid) }
+            return finish()
+        }
         val design = PropertiesDesign(this)
 
         original = withProfile { queryByUUID(uuid) } ?: return finish()

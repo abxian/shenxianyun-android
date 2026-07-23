@@ -19,6 +19,7 @@
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@drawable/bg_sxy_main"
         android:paddingStart="@{self.surface.insets.start}"
         android:paddingEnd="@{self.surface.insets.end}">
 
@@ -38,6 +39,9 @@
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:background="@drawable/bg_sxy_action"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:paddingVertical="@dimen/item_padding_vertical">
@@ -53,7 +57,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="@dimen/item_tailing_margin"
-                        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                        android:textColor="@color/sxy_text_muted" />
                 </LinearLayout>
 
                 <com.github.kr328.clash.design.view.ActionTextField

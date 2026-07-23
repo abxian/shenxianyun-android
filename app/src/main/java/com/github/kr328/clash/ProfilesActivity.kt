@@ -29,7 +29,7 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
     private val scanLauncher = registerForActivityResult(ScanQRCode(), ::scanResultHandler)
 
     override suspend fun main() {
-        val design = ProfilesDesign(this)
+        val design = ProfilesDesign(this, managedProfileUuid())
 
         setContentDesign(design)
 
@@ -72,7 +72,11 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                         is ProfilesDesign.Request.Delete ->
                             withProfile { delete(it.profile.uuid) }
                         is ProfilesDesign.Request.Edit ->
-                            startActivity(PropertiesActivity::class.intent.setUUID(it.profile.uuid))
+                            if (isManagedProfile(it.profile.uuid)) {
+                                withProfile { update(it.profile.uuid) }
+                            } else {
+                                startActivity(PropertiesActivity::class.intent.setUUID(it.profile.uuid))
+                            }
                         is ProfilesDesign.Request.Active -> {
                             withProfile {
                                 if (it.profile.imported)
@@ -177,11 +181,21 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                 name = queryByUUID(uuid)?.name
             }
             design?.showToast(
-                getString(R.string.toast_profile_updated_failed, name, reason),
+                if (isManagedProfile(uuid)) {
+                    getString(R.string.managed_profile_update_failed)
+                } else {
+                    getString(R.string.toast_profile_updated_failed, name, reason)
+                },
                 ToastDuration.Long
             ){
-                setAction(R.string.edit) {
-                    startActivity(PropertiesActivity::class.intent.setUUID(uuid))
+                if (isManagedProfile(uuid)) {
+                    setAction(R.string.update) {
+                        launch { withProfile { update(uuid) } }
+                    }
+                } else {
+                    setAction(R.string.edit) {
+                        startActivity(PropertiesActivity::class.intent.setUUID(uuid))
+                    }
                 }
             }
         }

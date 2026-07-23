@@ -5,21 +5,30 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:minHeight="66dp"
+        android:orientation="horizontal"
         android:paddingVertical="10dp">
 
-        <View
-            android:id="@+id/icon_view"
-            android:layout_width="@dimen/large_item_header_component_size"
-            android:layout_height="@dimen/large_item_header_component_size"
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_marginStart="18dp"
-            android:layout_marginEnd="14dp" />
+            android:layout_marginEnd="14dp"
+            android:background="@drawable/bg_sxy_icon_tile"
+            android:elevation="1dp"
+            android:theme="@style/ThemeOverlay.SxyIcon">
+
+            <View
+                android:id="@+id/icon_view"
+                android:layout_width="@dimen/large_item_header_component_size"
+                android:layout_height="@dimen/large_item_header_component_size"
+                android:layout_gravity="center" />
+        </FrameLayout>
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="18dp"
+            android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
@@ -38,5 +47,13 @@
                 android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
                 android:textColor="@color/sxy_text_muted" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="18dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_sxy_chevron" />
     </LinearLayout>
 </layout>

@@ -21,6 +21,7 @@ import com.github.kr328.clash.util.withProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -32,7 +33,7 @@ import com.github.kr328.clash.design.R
 
 class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
     private companion object {
-        const val ACTIVATION_STORE = "jc116_activation"
+        const val ACTIVATION_STORE = ACTIVATION_STORE_NAME
         const val KEY_CODE = "code"
         const val KEY_EXPIRES_AT = "expires_at"
         const val KEY_PROFILE_UUID = "profile_uuid"
@@ -56,7 +57,11 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
                         Toast.makeText(this@ExternalControlActivity, R.string.import_code_success, Toast.LENGTH_LONG).show()
                         startActivity(Intent(this@ExternalControlActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
                     } catch (e: Exception) {
-                        Toast.makeText(this@ExternalControlActivity, e.message ?: getString(R.string.import_code_invalid), Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this@ExternalControlActivity,
+                            getString(R.string.import_code_failed_after_retries),
+                            Toast.LENGTH_LONG,
+                        ).show()
                     } finally {
                         finish()
                     }
@@ -100,7 +105,8 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
         if (secureUrl.isBlank()) {
             throw IllegalStateException("Web backend did not return subscription_url")
         }
-        val name = uri.getQueryParameter("name") ?: "Code $code"
+        val name = uri.getQueryParameter("name")?.takeIf { it.isNotBlank() }
+            ?: MANAGED_PROFILE_NAME
         val uuid = withProfile {
             val savedUuid = activationStore()
                 .getString(KEY_PROFILE_UUID, null)
@@ -110,22 +116,20 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
             } else {
                 create(Profile.Type.Url, name)
             }
-            patch(profileUuid, name, secureUrl, 0)
-            commit(profileUuid, null)
-            queryByUUID(profileUuid)?.let {
-                setActive(it)
-            }
             profileUuid
         }
 
         val expiresAt = verify.optString("expires_at", "")
         val updateVersion = verify.optLong("update_version", 0L)
+        // 先保存受管配置身份，下载失败后的自动重试始终复用同一个 UUID。
         activationStore().edit()
             .putString(KEY_CODE, code)
             .putString(KEY_PROFILE_UUID, uuid.toString())
             .putString(KEY_EXPIRES_AT, expiresAt)
             .putLong(KEY_UPDATE_VERSION, updateVersion)
             .apply()
+
+        commitManagedProfileWithRetry(uuid, name, secureUrl)
     }
 
     private suspend fun importExternalSubscription(uri: Uri, url: String) {
@@ -157,19 +161,50 @@ class ExternalControlActivity : Activity(), CoroutineScope by MainScope() {
         return ""
     }
 
-    private suspend fun verifyActivationCode(code: String): JSONObject =
-        try {
-            verifyActivationCodeOnce(code, useBootstrap = false)
-        } catch (e: java.io.IOException) {
-            // 当前 API 线路失联：切到下一条可用线路重试。
-            EndpointResolver.rotate()
+    private suspend fun verifyActivationCode(code: String): JSONObject {
+        var lastError: Exception? = null
+
+        repeat(SUBSCRIPTION_NETWORK_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                delay(subscriptionRetryDelayMillis(attempt))
+                EndpointResolver.rotate()
+            }
+
             try {
-                verifyActivationCodeOnce(code, useBootstrap = false)
-            } catch (e2: java.io.IOException) {
-                // 最后一层：经后台下发的兜底代理去验证。
-                verifyActivationCodeOnce(code, useBootstrap = true)
+                return verifyActivationCodeOnce(
+                    code,
+                    useBootstrap = attempt == SUBSCRIPTION_NETWORK_ATTEMPTS - 1,
+                )
+            } catch (e: Exception) {
+                lastError = e
             }
         }
+
+        throw lastError ?: IllegalStateException("Unable to verify subscription code")
+    }
+
+    private suspend fun commitManagedProfileWithRetry(uuid: UUID, name: String, url: String) {
+        var lastError: Exception? = null
+
+        repeat(SUBSCRIPTION_NETWORK_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                delay(subscriptionRetryDelayMillis(attempt))
+            }
+
+            try {
+                withProfile {
+                    patch(uuid, name, url, 0)
+                    commit(uuid, null)
+                    queryByUUID(uuid)?.let { setActive(it) }
+                }
+                return
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+
+        throw lastError ?: IllegalStateException("Unable to import subscription")
+    }
 
     private suspend fun verifyActivationCodeOnce(code: String, useBootstrap: Boolean): JSONObject = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")

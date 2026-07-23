@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/sxy_surface_soft" />
+    <gradient
+        android:angle="315"
+        android:endColor="#BFEFF5FF"
+        android:startColor="@color/sxy_surface_soft" />
     <stroke
         android:width="1dp"
         android:color="@color/sxy_surface_stroke_soft" />
-    <corners android:radius="16dp" />
+    <corners android:radius="18dp" />
     <padding
         android:bottom="2dp"
         android:top="2dp" />

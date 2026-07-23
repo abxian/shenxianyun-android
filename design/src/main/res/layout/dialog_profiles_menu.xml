@@ -11,6 +11,9 @@
         <variable
             name="profile"
             type="com.github.kr328.clash.service.model.Profile" />
+        <variable
+            name="managed"
+            type="boolean" />
 
         <import type="com.github.kr328.clash.service.model.Profile.Type" />
         <import type="android.view.View" />
@@ -35,6 +38,7 @@
             android:layout_height="wrap_content"
             android:onClick="@{() -> master.requestEdit(self, profile)}"
             android:padding="@dimen/bottom_sheet_menu_items_padding"
+            android:visibility="@{managed ? View.GONE : View.VISIBLE}"
             app:icon="@drawable/ic_baseline_edit"
             app:text="@string/edit" />
 
@@ -43,7 +47,7 @@
             android:layout_height="wrap_content"
             android:onClick="@{() -> master.requestDuplicate(self, profile)}"
             android:padding="@dimen/bottom_sheet_menu_items_padding"
-            android:visibility="@{profile.imported ? View.VISIBLE : View.GONE}"
+            android:visibility="@{!managed &amp;&amp; profile.imported ? View.VISIBLE : View.GONE}"
             app:icon="@drawable/ic_baseline_content_copy"
             app:text="@string/duplicate" />
 
@@ -53,6 +57,7 @@
             android:onClick="@{() -> master.requestDelete(self, profile)}"
             android:padding="@dimen/bottom_sheet_menu_items_padding"
             android:theme="@style/ThemeOverlay.ControlColorError"
+            android:visibility="@{managed ? View.GONE : View.VISIBLE}"
             app:icon="@drawable/ic_outline_delete"
             app:text="@string/delete" />
     </LinearLayout>

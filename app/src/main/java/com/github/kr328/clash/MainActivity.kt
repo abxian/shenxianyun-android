@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
@@ -52,7 +53,7 @@ import com.github.kr328.clash.design.R
 
 class MainActivity : BaseActivity<MainDesign>() {
     private companion object {
-        const val ACTIVATION_STORE = "jc116_activation"
+        const val ACTIVATION_STORE = ACTIVATION_STORE_NAME
         const val KEY_CODE = "code"
         const val KEY_EXPIRES_AT = "expires_at"
         const val KEY_PROFILE_UUID = "profile_uuid"
@@ -468,7 +469,18 @@ class MainActivity : BaseActivity<MainDesign>() {
                 showToast(R.string.import_code_fetching, ToastDuration.Long)
             }
 
-            val verifyJson = verifyActivationCode(code, countImport = !silent)
+            val verifyJson = verifyActivationCode(code, countImport = !silent) { retry ->
+                if (!silent) {
+                    showToast(
+                        getString(
+                            R.string.import_code_retrying,
+                            retry,
+                            SUBSCRIPTION_NETWORK_RETRIES,
+                        ),
+                        ToastDuration.Long,
+                    )
+                }
+            }
             if (!verifyJson.optBoolean("ok", false)) {
                 if (!silent) {
                     showToast(R.string.import_code_invalid, ToastDuration.Long)
@@ -486,28 +498,28 @@ class MainActivity : BaseActivity<MainDesign>() {
             if (url.isBlank()) {
                 throw IllegalStateException("Web backend did not return subscription_url")
             }
-            val name = "Code $code"
+            val name = MANAGED_PROFILE_NAME
 
-            withProfile {
+            val uuid = withProfile {
                 val savedUuid = activationStore()
                     .getString(KEY_PROFILE_UUID, null)
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-                val uuid = if (savedUuid != null && queryByUUID(savedUuid) != null) {
+                if (savedUuid != null && queryByUUID(savedUuid) != null) {
                     savedUuid
                 } else {
                     create(Profile.Type.Url, name)
                 }
-                patch(uuid, name, url, 0)
-                commit(uuid, null)
-                queryByUUID(uuid)?.let {
-                    setActive(it)
-                }
-                activationStore().edit()
-                    .putString(KEY_CODE, code)
-                    .putString(KEY_EXPIRES_AT, expiresAt)
-                    .putString(KEY_PROFILE_UUID, uuid.toString())
-                    .apply()
             }
+            // 先登记 UUID：即使首次下载遇到瞬时断网，后续重试也复用同一配置，
+            // 设置页同时能立即把它识别为受管配置，不会暴露真实订阅地址。
+            activationStore().edit()
+                .putString(KEY_CODE, code)
+                .putString(KEY_EXPIRES_AT, expiresAt)
+                .putString(KEY_PROFILE_UUID, uuid.toString())
+                .apply()
+
+            commitManagedProfileWithRetry(uuid, name, url, silent)
+
             verifyJson.optLong("update_version", 0).takeIf { it > 0 }?.let { version ->
                 activationStore().edit()
                     .putLong(KEY_UPDATE_VERSION, version)
@@ -520,9 +532,46 @@ class MainActivity : BaseActivity<MainDesign>() {
             )
         } catch (e: Exception) {
             if (!silent) {
-                showExceptionToast(e)
+                showToast(R.string.import_code_failed_after_retries, ToastDuration.Long)
             }
         }
+    }
+
+    private suspend fun MainDesign.commitManagedProfileWithRetry(
+        uuid: UUID,
+        name: String,
+        url: String,
+        silent: Boolean,
+    ) {
+        var lastError: Exception? = null
+        repeat(SUBSCRIPTION_NETWORK_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                if (!silent) {
+                    showToast(
+                        getString(
+                            R.string.import_code_retrying,
+                            attempt,
+                            SUBSCRIPTION_NETWORK_RETRIES,
+                        ),
+                        ToastDuration.Long,
+                    )
+                }
+                delay(subscriptionRetryDelayMillis(attempt))
+            }
+
+            try {
+                withProfile {
+                    patch(uuid, name, url, 0)
+                    commit(uuid, null)
+                    queryByUUID(uuid)?.let { setActive(it) }
+                }
+                return
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+
+        throw lastError ?: IllegalStateException("Unable to import subscription")
     }
 
     private suspend fun MainDesign.startClash() {
@@ -591,19 +640,35 @@ class MainActivity : BaseActivity<MainDesign>() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
-    private suspend fun verifyActivationCode(code: String, countImport: Boolean = false): JSONObject =
-        try {
-            verifyActivationCodeOnce(code, countImport, useBootstrap = false)
-        } catch (e: Exception) {
-            // 当前 API 线路失联（如主域名挂掉）：切到下一条可用线路重试。
-            EndpointResolver.rotate()
+    private suspend fun verifyActivationCode(
+        code: String,
+        countImport: Boolean = false,
+        onRetry: suspend (Int) -> Unit = {},
+    ): JSONObject {
+        var lastError: Exception? = null
+
+        repeat(SUBSCRIPTION_NETWORK_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                onRetry(attempt)
+                delay(subscriptionRetryDelayMillis(attempt))
+                // 当前 API 线路失联（如主域名挂掉）：切到下一条可用线路重试。
+                EndpointResolver.rotate()
+            }
+
             try {
-                verifyActivationCodeOnce(code, countImport, useBootstrap = false)
-            } catch (e2: Exception) {
-                // 最后一层：经后台下发的兜底代理去验证（解决直连全挂/首装连不上）。
-                verifyActivationCodeOnce(code, countImport, useBootstrap = true)
+                // 最后一层经后台下发的兜底代理验证，解决直连全挂或首装连不上。
+                return verifyActivationCodeOnce(
+                    code,
+                    countImport,
+                    useBootstrap = attempt == SUBSCRIPTION_NETWORK_ATTEMPTS - 1,
+                )
+            } catch (e: Exception) {
+                lastError = e
             }
         }
+
+        throw lastError ?: IllegalStateException("Unable to verify subscription code")
+    }
 
     private suspend fun verifyActivationCodeOnce(
         code: String,
@@ -817,7 +882,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
         val expiresAt = verifyJson.optString("expires_at", "")
-        val name = "Code $code"
+        val name = MANAGED_PROFILE_NAME
         val expiredUuid = expiredProfileUuid()
         withProfile {
             val savedUuid = activationStore().getString(KEY_PROFILE_UUID, null)

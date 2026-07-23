@@ -6,7 +6,7 @@ import android.view.MotionEvent
 import android.widget.FrameLayout
 import androidx.annotation.AttrRes
 import androidx.annotation.StyleRes
-import com.github.kr328.clash.design.util.resolveThemedColor
+import com.github.kr328.clash.design.R
 
 class ActivityBarLayout @JvmOverloads constructor(
     context: Context,
@@ -17,7 +17,7 @@ class ActivityBarLayout @JvmOverloads constructor(
     init {
         alpha = 0.96f
 
-        setBackgroundColor(context.resolveThemedColor(android.R.attr.windowBackground))
+        setBackgroundResource(R.drawable.bg_sxy_toolbar)
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {

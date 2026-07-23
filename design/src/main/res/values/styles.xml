@@ -7,4 +7,9 @@
         <item name="colorControlNormal">@color/color_error</item>
         <item name="android:textColor">@color/color_error</item>
     </style>
+
+    <style name="ThemeOverlay.SxyIcon">
+        <item name="colorControlNormal">@color/sxy_icon_tint</item>
+        <item name="android:colorControlNormal">@color/sxy_icon_tint</item>
+    </style>
 </resources>

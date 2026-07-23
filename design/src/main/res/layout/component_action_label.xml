@@ -3,37 +3,60 @@
     <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
+        android:layout_marginHorizontal="18dp"
+        android:layout_marginVertical="5dp"
+        android:background="@drawable/bg_sxy_action"
         android:clickable="true"
+        android:elevation="1dp"
         android:focusable="true"
         android:gravity="center_vertical"
         android:minHeight="@dimen/item_min_height"
         android:orientation="horizontal"
         android:paddingVertical="@dimen/item_padding_vertical">
 
-        <View
-            android:id="@+id/icon_view"
-            android:layout_width="@dimen/item_header_component_size"
-            android:layout_height="@dimen/item_header_component_size"
-            android:layout_marginHorizontal="@dimen/item_header_margin" />
+        <FrameLayout
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:layout_marginHorizontal="14dp"
+            android:background="@drawable/bg_sxy_icon_tile"
+            android:theme="@style/ThemeOverlay.SxyIcon">
+
+            <View
+                android:id="@+id/icon_view"
+                android:layout_width="@dimen/item_header_component_size"
+                android:layout_height="@dimen/item_header_component_size"
+                android:layout_gravity="center" />
+        </FrameLayout>
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
                 android:id="@+id/text_view"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body1" />
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+                android:textColor="@color/sxy_text_soft"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/subtext_view"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/item_text_margin"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                android:textColor="@color/sxy_text_muted" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="16dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_sxy_chevron" />
     </LinearLayout>
 </layout>

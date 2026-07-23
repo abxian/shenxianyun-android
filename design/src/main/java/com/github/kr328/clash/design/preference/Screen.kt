@@ -19,6 +19,8 @@ fun CoroutineScope.preferenceScreen(
 ): PreferenceScreen {
     val root = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
+        val padding = (12 * resources.displayMetrics.density).toInt()
+        setPadding(padding, 4, padding, padding)
     }
 
     val impl = object : PreferenceScreen, CoroutineScope by this {

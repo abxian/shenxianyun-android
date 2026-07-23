@@ -70,21 +70,21 @@
 
                 <Space
                     android:layout_width="match_parent"
-                    android:layout_height="28dp" />
+                    android:layout_height="34dp" />
 
                 <ImageView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="58dp"
+                    android:layout_height="58dp"
                     android:contentDescription="@string/application_name"
                     android:src="@drawable/ic_sxy_mark" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="12dp"
                     android:text="@string/application_name"
-                    android:textAppearance="@style/TextAppearance.MaterialComponents.Headline4"
-                    android:textColor="@android:color/white"
+                    android:textSize="38sp"
+                    android:textColor="@color/sxy_text_soft"
                     android:textStyle="bold" />
 
                 <TextView
@@ -105,24 +105,24 @@
                     android:paddingVertical="4dp"
                     android:text="@{lineStatus}"
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-                    android:textColor="@android:color/white"
+                    android:textColor="@color/sxy_purple"
                     android:visibility="@{lineStatus == null ? View.GONE : View.VISIBLE}" />
 
                 <FrameLayout
-                    android:layout_width="188dp"
-                    android:layout_height="188dp"
-                    android:layout_marginTop="30dp">
+                    android:layout_width="218dp"
+                    android:layout_height="218dp"
+                    android:layout_marginTop="34dp">
 
                     <View
-                        android:layout_width="188dp"
-                        android:layout_height="188dp"
+                        android:layout_width="218dp"
+                        android:layout_height="218dp"
                         android:alpha="@{clashRunning ? 0.95f : 0.5f}"
                         android:background="@drawable/bg_sxy_power_halo" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/power_button"
-                        android:layout_width="158dp"
-                        android:layout_height="158dp"
+                        android:layout_width="182dp"
+                        android:layout_height="182dp"
                         android:layout_gravity="center"
                         android:background="@drawable/bg_sxy_power_inner"
                         android:elevation="10dp"
@@ -132,7 +132,7 @@
                         android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5"
                         android:textColor="@android:color/white"
                         app:backgroundTint="@null"
-                        app:cornerRadius="80dp"
+                        app:cornerRadius="92dp"
                         app:icon="@{clashRunning ? @drawable/ic_baseline_stop : @drawable/ic_baseline_vpn_lock}"
                         app:iconGravity="top"
                         app:iconPadding="8dp"
@@ -179,8 +179,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="24dp"
                     android:background="@drawable/bg_sxy_panel"
+                    android:elevation="2dp"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="16dp">
 
                     <com.google.android.material.button.MaterialButtonToggleGroup
                         android:layout_width="match_parent"
@@ -198,7 +199,7 @@
                             android:checked="@{ruleMode}"
                             android:onClick="@{() -> self.request(Request.SetRuleMode)}"
                             android:text="@string/rule_mode"
-                            android:textColor="@color/sxy_text_soft"
+                            android:textColor="@color/sxy_purple"
                             app:cornerRadius="10dp"
                             app:strokeColor="@color/sxy_surface_stroke_soft" />
 

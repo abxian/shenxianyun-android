@@ -12,6 +12,7 @@
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@drawable/bg_sxy_main"
         android:paddingStart="@{self.surface.insets.start}"
         android:paddingEnd="@{self.surface.insets.end}">
 
@@ -33,6 +34,7 @@
                     android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartProfiles)}"
                     app:icon="@drawable/ic_baseline_view_list"
+                    app:subtext="@string/manage_profiles_summary"
                     app:text="@string/manage_profiles" />
 
                 <com.github.kr328.clash.design.view.ActionLabel
@@ -40,6 +42,7 @@
                     android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartApp)}"
                     app:icon="@drawable/ic_baseline_settings"
+                    app:subtext="@string/app_settings_summary"
                     app:text="@string/app" />
 
                 <com.github.kr328.clash.design.view.ActionLabel
@@ -47,6 +50,7 @@
                     android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartNetwork)}"
                     app:icon="@drawable/ic_baseline_dns"
+                    app:subtext="@string/network_settings_summary"
                     app:text="@string/network" />
 
                 <com.github.kr328.clash.design.view.ActionLabel
@@ -54,6 +58,7 @@
                     android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartOverride)}"
                     app:icon="@drawable/ic_baseline_extension"
+                    app:subtext="@string/override_settings_summary"
                     app:text="@string/override" />
 
                 <com.github.kr328.clash.design.view.ActionLabel
@@ -61,6 +66,7 @@
                     android:layout_height="wrap_content"
                     android:onClick="@{() -> self.request(Request.StartMetaFeature)}"
                     app:icon="@drawable/ic_baseline_meta"
+                    app:subtext="@string/meta_settings_summary"
                     app:text="@string/meta_features" />
 
             </LinearLayout>
