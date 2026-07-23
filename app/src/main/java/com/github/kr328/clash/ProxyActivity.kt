@@ -5,6 +5,7 @@ import com.github.kr328.clash.core.model.Proxy
 import com.github.kr328.clash.design.ProxyDesign
 import com.github.kr328.clash.design.model.ProxyState
 import com.github.kr328.clash.util.withClash
+import com.github.kr328.clash.util.withProfile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
@@ -13,10 +14,10 @@ import kotlinx.coroutines.sync.withPermit
 
 class ProxyActivity : BaseActivity<ProxyDesign>() {
     override suspend fun main() {
-        val mode = withClash { queryTunnelState().mode }
-        val names = withClash {
-            ProxyGroupResolver.visibleGroupNames(mode, queryProxyGroupNames(true))
+        val simplified = withProfile {
+            queryActive()?.uuid == managedProfileUuid()
         }
+        val names = queryVisibleGroupNames(simplified)
         val states = List(names.size) { ProxyState("?") }
         val unorderedStates = names.indices.map { names[it] to states[it] }.toMap()
         val reloadLock = Semaphore(10)
@@ -24,7 +25,8 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
         val design = ProxyDesign(
             this,
             names,
-            uiStore
+            uiStore,
+            simplified,
         )
 
         setContentDesign(design)
@@ -36,15 +38,12 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
                 events.onReceive {
                     when (it) {
                         Event.ProfileLoaded -> {
-                            val newNames = withClash {
-                                val currentMode = queryTunnelState().mode
-                                ProxyGroupResolver.visibleGroupNames(
-                                    currentMode,
-                                    queryProxyGroupNames(true),
-                                )
+                            val newSimplified = withProfile {
+                                queryActive()?.uuid == managedProfileUuid()
                             }
+                            val newNames = queryVisibleGroupNames(newSimplified)
 
-                            if (newNames != names) {
+                            if (newSimplified != simplified || newNames != names) {
                                 startActivity(ProxyActivity::class.intent)
 
                                 finish()
@@ -106,4 +105,16 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
             }
         }
     }
+
+    private suspend fun queryVisibleGroupNames(simplified: Boolean): List<String> =
+        withClash {
+            if (simplified) {
+                ProxyGroupResolver.managedGroupNames(
+                    queryTunnelState().mode,
+                    queryProxyGroupNames(true),
+                )
+            } else {
+                queryProxyGroupNames(uiStore.proxyExcludeNotSelectable)
+            }
+        }
 }

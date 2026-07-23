@@ -56,6 +56,7 @@
     <string name="profiles">配置</string>
     <string name="properties">參數</string>
     <string name="proxy">選擇節點</string>
+    <string name="managed_nodes_title">節點</string>
     <string name="recently">近期</string>
     <string name="route_system_traffic">自動路由系統流量</string>
     <string name="routing_via_vpn_service">通過 VpnService 自動路由所有系統流量</string>

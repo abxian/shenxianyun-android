@@ -5,6 +5,7 @@ import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import com.github.kr328.clash.core.model.TunnelState
 import com.github.kr328.clash.core.util.trafficTotal
 import com.github.kr328.clash.design.databinding.DesignAboutBinding
@@ -12,6 +13,7 @@ import com.github.kr328.clash.design.databinding.DesignMainBinding
 import com.github.kr328.clash.design.util.layoutInflater
 import com.github.kr328.clash.design.util.resolveThemedColor
 import com.github.kr328.clash.design.util.root
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -75,7 +77,38 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
             }
             binding.ruleMode = mode == TunnelState.Mode.Rule
             binding.globalMode = mode == TunnelState.Mode.Global
+            updateModeButton(binding.ruleModeButton, mode == TunnelState.Mode.Rule)
+            updateModeButton(binding.globalModeButton, mode == TunnelState.Mode.Global)
         }
+    }
+
+    private fun updateModeButton(button: MaterialButton, selected: Boolean) {
+        val background = ContextCompat.getColor(
+            context,
+            if (selected) R.color.sxy_purple else R.color.sxy_surface_soft,
+        )
+        val foreground = ContextCompat.getColor(
+            context,
+            if (selected) android.R.color.white else R.color.sxy_text_soft,
+        )
+        val stroke = ContextCompat.getColor(
+            context,
+            if (selected) R.color.sxy_cyan else R.color.sxy_surface_stroke_soft,
+        )
+
+        button.backgroundTintList = android.content.res.ColorStateList.valueOf(background)
+        button.setTextColor(foreground)
+        button.strokeColor = android.content.res.ColorStateList.valueOf(stroke)
+        button.strokeWidth = if (selected) 2.dp else 1.dp
+        button.icon = if (selected) {
+            ContextCompat.getDrawable(context, R.drawable.ic_outline_check_circle)
+        } else {
+            null
+        }
+        button.iconTint = android.content.res.ColorStateList.valueOf(foreground)
+        button.alpha = if (selected) 1f else 0.72f
+        button.scaleX = if (selected) 1f else 0.96f
+        button.scaleY = if (selected) 1f else 0.96f
     }
 
     suspend fun setHasProviders(has: Boolean) {
@@ -255,4 +288,7 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
                 .start()
         }
     }
+
+    private val Int.dp: Int
+        get() = (this * context.resources.displayMetrics.density).toInt()
 }

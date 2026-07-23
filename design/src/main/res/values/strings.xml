@@ -12,6 +12,7 @@
     <string name="format_traffic_forwarded">%s Forwarded</string>
 
     <string name="proxy">Select Node</string>
+    <string name="managed_nodes_title">Nodes</string>
     <string name="direct_mode">Direct Mode</string>
     <string name="rule_mode">Rule Mode</string>
     <string name="global_mode">Global Mode</string>

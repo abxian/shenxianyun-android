@@ -102,6 +102,7 @@
     <string name="new_code_summary">打开购买页面，获取一个新的提取码</string>
     <string name="properties">参数</string>
     <string name="proxy">选择节点</string>
+    <string name="managed_nodes_title">节点</string>
     <string name="recently">近期</string>
     <string name="route_system_traffic">自动路由系统流量</string>
     <string name="routing_via_vpn_service">通过 VpnService 自动路由所有系统流量</string>

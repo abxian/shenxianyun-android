@@ -3,7 +3,7 @@ package com.github.kr328.clash
 import com.github.kr328.clash.core.model.TunnelState
 
 internal object ProxyGroupResolver {
-    fun visibleGroupNames(
+    fun managedGroupNames(
         mode: TunnelState.Mode,
         availableNames: List<String>,
     ): List<String> {

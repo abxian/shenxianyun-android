@@ -193,6 +193,7 @@
                         app:singleSelection="true">
 
                         <com.google.android.material.button.MaterialButton
+                            android:id="@+id/rule_mode_button"
                             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                             android:layout_width="0dp"
                             android:layout_height="46dp"
@@ -205,6 +206,7 @@
                             app:strokeColor="@color/sxy_surface_stroke_soft" />
 
                         <com.google.android.material.button.MaterialButton
+                            android:id="@+id/global_mode_button"
                             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                             android:layout_width="0dp"
                             android:layout_height="46dp"

@@ -29,6 +29,7 @@ class ProxyDesign(
     context: Context,
     private val groupNames: List<String>,
     private val uiStore: UiStore,
+    private val simplified: Boolean,
 ) : Design<ProxyDesign.Request>(context) {
     sealed class Request {
         object ReloadAll : Request()
@@ -48,6 +49,7 @@ class ProxyDesign(
         val header: TextView,
         val recyclerView: RecyclerView,
         val adapter: ProxyAdapter,
+        var expanded: Boolean,
         var urlTesting: Boolean = false,
     )
 
@@ -85,7 +87,9 @@ class ProxyDesign(
     suspend fun requestRedrawVisible() {
         withContext(Dispatchers.Main) {
             sections.forEach {
-                it.recyclerView.invalidateChildren()
+                if (it.expanded) {
+                    it.recyclerView.invalidateChildren()
+                }
             }
         }
     }
@@ -106,11 +110,19 @@ class ProxyDesign(
                 context.resolveThemedColor(com.google.android.material.R.attr.colorOnPrimary)
             )
 
-            groupNames.forEachIndexed { index, name ->
-                addGroupSection(index, name)
+            val initialPosition = if (simplified) {
+                0
+            } else {
+                groupNames.indexOf(uiStore.proxyLastGroup)
+                    .takeIf { it >= 0 }
+                    ?: 0
             }
 
-            activeGroupIndex = 0
+            groupNames.forEachIndexed { index, name ->
+                addGroupSection(index, name, simplified || index == initialPosition)
+            }
+
+            activeGroupIndex = initialPosition
             updateUrlTestButtonStatus()
         }
     }
@@ -123,7 +135,7 @@ class ProxyDesign(
         updateUrlTestButtonStatus()
     }
 
-    private fun addGroupSection(index: Int, name: String) {
+    private fun addGroupSection(index: Int, name: String, expanded: Boolean) {
         val header = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -138,7 +150,6 @@ class ProxyDesign(
             textSize = 16f
             setTextColor(ContextCompat.getColor(context, R.color.sxy_text_soft))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            text = name
         }
 
         val adapter = ProxyAdapter(config) { proxyName ->
@@ -157,13 +168,37 @@ class ProxyDesign(
             isNestedScrollingEnabled = false
             clipToPadding = false
             this.adapter = adapter
+            visibility = if (expanded) View.VISIBLE else View.GONE
         }
 
-        val section = GroupSection(header, recyclerView, adapter)
+        val section = GroupSection(header, recyclerView, adapter, expanded)
         sections += section
+
+        if (!simplified) {
+            header.setOnClickListener {
+                activeGroupIndex = index
+                section.expanded = !section.expanded
+                recyclerView.visibility = if (section.expanded) View.VISIBLE else View.GONE
+                uiStore.proxyLastGroup = name
+                refreshGroupHeaders()
+                updateUrlTestButtonStatus()
+            }
+        }
 
         binding.groupsContainer.addView(header)
         binding.groupsContainer.addView(recyclerView)
+        refreshGroupHeaders()
+    }
+
+    private fun refreshGroupHeaders() {
+        sections.forEachIndexed { index, section ->
+            section.header.text = if (simplified) {
+                context.getString(R.string.managed_nodes_title)
+            } else {
+                val marker = if (section.expanded) "v" else ">"
+                "$marker  ${groupNames[index]}"
+            }
+        }
     }
 
     private fun updateUrlTestButtonStatus() {

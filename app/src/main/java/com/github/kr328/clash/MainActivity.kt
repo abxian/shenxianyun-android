@@ -52,6 +52,8 @@ import java.util.concurrent.TimeUnit
 import com.github.kr328.clash.design.R
 
 class MainActivity : BaseActivity<MainDesign>() {
+    private var selectedMode = TunnelState.Mode.Rule
+
     private companion object {
         const val ACTIVATION_STORE = ACTIVATION_STORE_NAME
         const val KEY_CODE = "code"
@@ -86,6 +88,8 @@ class MainActivity : BaseActivity<MainDesign>() {
         runCatching { ensureDefaultMetaFeatures() }
             .onFailure { design.showExceptionToast(it.asException()) }
 
+        runCatching { design.resetModeForLaunch() }
+            .onFailure { design.showExceptionToast(it.asException()) }
         runCatching { design.fetch() }
             .onFailure { design.showExceptionToast(it.asException()) }
         runCatching { design.checkAppUpdate() }
@@ -413,21 +417,36 @@ class MainActivity : BaseActivity<MainDesign>() {
     }
 
     private suspend fun MainDesign.patchMode(mode: TunnelState.Mode) {
+        selectedMode = mode
         withClash {
-            listOf(Clash.OverrideSlot.Persist, Clash.OverrideSlot.Session).forEach { slot ->
-                val override = queryOverride(slot)
-                override.mode = mode
-                patchOverride(slot, override)
-            }
+            val override = queryOverride(Clash.OverrideSlot.Session)
+            override.mode = mode
+            patchOverride(Clash.OverrideSlot.Session, override)
         }
         setMode(mode)
     }
 
-    private suspend fun applyPersistedModeBeforeStart() {
+    private suspend fun MainDesign.resetModeForLaunch() {
         withClash {
-            val persistedMode = queryOverride(Clash.OverrideSlot.Persist).mode ?: return@withClash
+            // 模式只在本次打开期间有效。清掉旧版本可能留下的持久 mode，
+            // 每次重新打开默认规则模式，用户仍可在当前页面手动切换全局模式。
+            val persistedOverride = queryOverride(Clash.OverrideSlot.Persist)
+            if (persistedOverride.mode != null) {
+                persistedOverride.mode = null
+                patchOverride(Clash.OverrideSlot.Persist, persistedOverride)
+            }
             val sessionOverride = queryOverride(Clash.OverrideSlot.Session)
-            sessionOverride.mode = persistedMode
+            sessionOverride.mode = TunnelState.Mode.Rule
+            patchOverride(Clash.OverrideSlot.Session, sessionOverride)
+        }
+        selectedMode = TunnelState.Mode.Rule
+        setMode(selectedMode)
+    }
+
+    private suspend fun applySelectedModeBeforeStart() {
+        withClash {
+            val sessionOverride = queryOverride(Clash.OverrideSlot.Session)
+            sessionOverride.mode = selectedMode
             patchOverride(Clash.OverrideSlot.Session, sessionOverride)
         }
     }
@@ -617,7 +636,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
 
-        applyPersistedModeBeforeStart()
+        applySelectedModeBeforeStart()
         val vpnRequest = startClashService()
 
         try {
@@ -955,12 +974,39 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
 
         try {
+            val managed = withProfile {
+                queryActive()?.uuid == managedProfileUuid()
+            }
             val (groupName, nodes, selected) = withClash {
                 val mode = queryTunnelState().mode
-                val preferredName = ProxyGroupResolver.visibleGroupNames(
-                    mode,
-                    queryProxyGroupNames(true),
-                ).firstOrNull()
+                val names = queryProxyGroupNames(true)
+                val preferredName = if (managed) {
+                    ProxyGroupResolver.managedGroupNames(mode, names).firstOrNull()
+                } else {
+                    val groups = names.map { name ->
+                        name to queryProxyGroup(name, ProxySort.Delay)
+                    }
+                    groups.firstOrNull { (name, group) ->
+                        val lower = name.lowercase(Locale.ROOT)
+                        group.type == Proxy.Type.Selector &&
+                            group.proxies.any {
+                                !it.type.group &&
+                                    it.type != Proxy.Type.Direct &&
+                                    it.type != Proxy.Type.Reject
+                            } &&
+                            (name.contains("节点") ||
+                                name.contains("选择") ||
+                                lower.contains("proxy") ||
+                                lower.contains("select"))
+                    }?.first ?: groups.firstOrNull { (_, group) ->
+                        group.type == Proxy.Type.Selector &&
+                            group.proxies.any {
+                                !it.type.group &&
+                                    it.type != Proxy.Type.Direct &&
+                                    it.type != Proxy.Type.Reject
+                            }
+                    }?.first
+                }
 
                 if (preferredName == null) {
                     Triple("", emptyList<Proxy>(), "")
