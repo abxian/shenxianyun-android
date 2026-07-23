@@ -2,19 +2,16 @@ package com.github.kr328.clash.design
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.github.kr328.clash.core.model.Proxy
 import com.github.kr328.clash.core.model.TunnelState
 import com.github.kr328.clash.design.adapter.ProxyAdapter
-import com.github.kr328.clash.design.component.ProxyMenu
 import com.github.kr328.clash.design.component.ProxyViewConfig
 import com.github.kr328.clash.design.databinding.DesignProxyBinding
 import com.github.kr328.clash.design.model.ProxyState
@@ -30,14 +27,12 @@ import kotlinx.coroutines.withContext
 
 class ProxyDesign(
     context: Context,
-    overrideMode: TunnelState.Mode?,
     private val groupNames: List<String>,
     private val uiStore: UiStore,
 ) : Design<ProxyDesign.Request>(context) {
     sealed class Request {
         object ReloadAll : Request()
         object ReLaunch : Request()
-
         data class PatchMode(val mode: TunnelState.Mode?) : Request()
         data class Reload(val index: Int) : Request()
         data class Select(val index: Int, val name: String) : Request()
@@ -49,17 +44,10 @@ class ProxyDesign(
 
     private var config = ProxyViewConfig(context, uiStore.proxyLine)
 
-    private val menu: ProxyMenu by lazy {
-        ProxyMenu(context, binding.menuView, overrideMode, uiStore, requests) {
-            config.proxyLine = uiStore.proxyLine
-        }
-    }
-
     private data class GroupSection(
         val header: TextView,
         val recyclerView: RecyclerView,
         val adapter: ProxyAdapter,
-        var expanded: Boolean,
         var urlTesting: Boolean = false,
     )
 
@@ -97,16 +85,8 @@ class ProxyDesign(
     suspend fun requestRedrawVisible() {
         withContext(Dispatchers.Main) {
             sections.forEach {
-                if (it.expanded) {
-                    it.recyclerView.invalidateChildren()
-                }
+                it.recyclerView.invalidateChildren()
             }
-        }
-    }
-
-    suspend fun showModeSwitchTips() {
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, R.string.mode_switch_tips, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -114,10 +94,6 @@ class ProxyDesign(
         binding.self = this
 
         binding.activityBarLayout.applyFrom(context)
-
-        binding.menuView.setOnClickListener {
-            menu.show()
-        }
 
         if (groupNames.isEmpty()) {
             binding.emptyView.visibility = View.VISIBLE
@@ -130,15 +106,11 @@ class ProxyDesign(
                 context.resolveThemedColor(com.google.android.material.R.attr.colorOnPrimary)
             )
 
-            val initialPosition = groupNames.indexOf(uiStore.proxyLastGroup)
-                .takeIf { it >= 0 }
-                ?: 0
-
             groupNames.forEachIndexed { index, name ->
-                addGroupSection(index, name, index == initialPosition)
+                addGroupSection(index, name)
             }
 
-            activeGroupIndex = initialPosition
+            activeGroupIndex = 0
             updateUrlTestButtonStatus()
         }
     }
@@ -151,7 +123,7 @@ class ProxyDesign(
         updateUrlTestButtonStatus()
     }
 
-    private fun addGroupSection(index: Int, name: String, expanded: Boolean) {
+    private fun addGroupSection(index: Int, name: String) {
         val header = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -164,8 +136,9 @@ class ProxyDesign(
             setPadding(18.dp, 0, 18.dp, 0)
             gravity = android.view.Gravity.CENTER_VERTICAL
             textSize = 16f
-            setTextColor(Color.WHITE)
+            setTextColor(ContextCompat.getColor(context, R.color.sxy_text_soft))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
+            text = name
         }
 
         val adapter = ProxyAdapter(config) { proxyName ->
@@ -184,31 +157,13 @@ class ProxyDesign(
             isNestedScrollingEnabled = false
             clipToPadding = false
             this.adapter = adapter
-            visibility = if (expanded) View.VISIBLE else View.GONE
         }
 
-        val section = GroupSection(header, recyclerView, adapter, expanded)
+        val section = GroupSection(header, recyclerView, adapter)
         sections += section
-
-        header.setOnClickListener {
-            activeGroupIndex = index
-            section.expanded = !section.expanded
-            recyclerView.visibility = if (section.expanded) View.VISIBLE else View.GONE
-            refreshGroupHeaders()
-            uiStore.proxyLastGroup = name
-            updateUrlTestButtonStatus()
-        }
 
         binding.groupsContainer.addView(header)
         binding.groupsContainer.addView(recyclerView)
-        refreshGroupHeaders()
-    }
-
-    private fun refreshGroupHeaders() {
-        sections.forEachIndexed { index, section ->
-            val marker = if (section.expanded) "v" else ">"
-            section.header.text = "$marker  ${groupNames[index]}"
-        }
     }
 
     private fun updateUrlTestButtonStatus() {

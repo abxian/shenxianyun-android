@@ -47,7 +47,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_marginStart="@dimen/item_tailing_margin"
-                        android:layout_toStartOf="@id/menu_view">
+                        android:layout_alignParentEnd="true">
 
                         <ImageView
                             android:id="@+id/url_test_view"
@@ -68,20 +68,6 @@
                             android:layout_height="@dimen/item_tailing_component_size"
                             android:visibility="gone" />
                     </FrameLayout>
-
-                    <ImageView
-                        android:id="@+id/menu_view"
-                        android:layout_width="@dimen/item_tailing_component_size"
-                        android:layout_height="@dimen/item_tailing_component_size"
-                        android:layout_alignParentEnd="true"
-                        android:layout_centerVertical="true"
-                        android:layout_marginStart="@dimen/item_tailing_margin"
-                        android:background="@drawable/bg_sxy_action"
-                        android:clickable="true"
-                        android:contentDescription="@string/more"
-                        android:focusable="true"
-                        android:padding="@dimen/toolbar_image_action_padding"
-                        android:src="@drawable/ic_baseline_more_vert" />
 
                 </RelativeLayout>
             </com.github.kr328.clash.design.view.ActivityBarLayout>
@@ -113,7 +99,7 @@
             android:layout_gravity="center"
             android:text="@string/proxy_empty_tips"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6"
-            android:textColor="@android:color/white"
+            android:textColor="@color/sxy_text_soft"
             android:visibility="gone" />
 
         <FrameLayout

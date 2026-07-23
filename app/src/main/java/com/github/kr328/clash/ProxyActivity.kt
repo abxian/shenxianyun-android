@@ -1,7 +1,6 @@
 package com.github.kr328.clash
 
 import com.github.kr328.clash.common.util.intent
-import com.github.kr328.clash.core.Clash
 import com.github.kr328.clash.core.model.Proxy
 import com.github.kr328.clash.design.ProxyDesign
 import com.github.kr328.clash.design.model.ProxyState
@@ -14,15 +13,16 @@ import kotlinx.coroutines.sync.withPermit
 
 class ProxyActivity : BaseActivity<ProxyDesign>() {
     override suspend fun main() {
-        val mode = withClash { queryOverride(Clash.OverrideSlot.Session).mode }
-        val names = withClash { queryProxyGroupNames(uiStore.proxyExcludeNotSelectable) }
+        val mode = withClash { queryTunnelState().mode }
+        val names = withClash {
+            ProxyGroupResolver.visibleGroupNames(mode, queryProxyGroupNames(true))
+        }
         val states = List(names.size) { ProxyState("?") }
         val unorderedStates = names.indices.map { names[it] to states[it] }.toMap()
         val reloadLock = Semaphore(10)
 
         val design = ProxyDesign(
             this,
-            mode,
             names,
             uiStore
         )
@@ -37,7 +37,11 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
                     when (it) {
                         Event.ProfileLoaded -> {
                             val newNames = withClash {
-                                queryProxyGroupNames(uiStore.proxyExcludeNotSelectable)
+                                val currentMode = queryTunnelState().mode
+                                ProxyGroupResolver.visibleGroupNames(
+                                    currentMode,
+                                    queryProxyGroupNames(true),
+                                )
                             }
 
                             if (newNames != names) {
@@ -51,11 +55,9 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
                 }
                 design.requests.onReceive {
                     when (it) {
-                        ProxyDesign.Request.ReLaunch -> {
-                            startActivity(ProxyActivity::class.intent)
-
-                            finish()
-                        }
+                        // 节点页菜单已隐藏，这两类旧组件请求不再有入口，仅保留类型兼容。
+                        ProxyDesign.Request.ReLaunch,
+                        is ProxyDesign.Request.PatchMode -> Unit
                         ProxyDesign.Request.ReloadAll -> {
                             names.indices.forEach { idx ->
                                 design.requests.trySend(ProxyDesign.Request.Reload(idx))
@@ -97,17 +99,6 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
                                 }
 
                                 design.requests.send(ProxyDesign.Request.Reload(it.index))
-                            }
-                        }
-                        is ProxyDesign.Request.PatchMode -> {
-                            design.showModeSwitchTips()
-
-                            withClash {
-                                val o = queryOverride(Clash.OverrideSlot.Session)
-
-                                o.mode = it.mode
-
-                                patchOverride(Clash.OverrideSlot.Session, o)
                             }
                         }
                     }

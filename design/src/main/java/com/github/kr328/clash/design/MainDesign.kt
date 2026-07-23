@@ -2,6 +2,8 @@ package com.github.kr328.clash.design
 
 import android.content.Context
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.appcompat.app.AlertDialog
 import com.github.kr328.clash.core.model.TunnelState
 import com.github.kr328.clash.core.util.trafficTotal
@@ -33,6 +35,7 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
 
     private val binding = DesignMainBinding
         .inflate(context.layoutInflater, context.root, false)
+    private var currentClashRunning = false
 
     override val root: View
         get() = binding.root
@@ -51,6 +54,7 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
 
     suspend fun setClashRunning(running: Boolean) {
         withContext(Dispatchers.Main) {
+            currentClashRunning = running
             binding.clashRunning = running
         }
     }
@@ -205,6 +209,50 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     }
 
     fun request(request: Request) {
+        if (request == Request.ToggleStatus && !currentClashRunning) {
+            playStartEffect()
+        }
         requests.trySend(request)
+    }
+
+    private fun playStartEffect() {
+        binding.powerButton.animate().cancel()
+        binding.powerHalo.animate().cancel()
+
+        binding.powerButton.animate()
+            .scaleX(0.92f)
+            .scaleY(0.92f)
+            .setDuration(110L)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .withEndAction {
+                binding.powerButton.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(260L)
+                    .setInterpolator(OvershootInterpolator(1.7f))
+                    .start()
+            }
+            .start()
+
+        binding.powerHalo.apply {
+            rotation = 0f
+            scaleX = 0.82f
+            scaleY = 0.82f
+            alpha = 0.95f
+            animate()
+                .rotation(180f)
+                .scaleX(1.16f)
+                .scaleY(1.16f)
+                .alpha(0.18f)
+                .setDuration(520L)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withEndAction {
+                    rotation = 0f
+                    scaleX = 1f
+                    scaleY = 1f
+                    alpha = if (currentClashRunning) 0.95f else 0.5f
+                }
+                .start()
+        }
     }
 }

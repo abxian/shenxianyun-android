@@ -414,11 +414,22 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun MainDesign.patchMode(mode: TunnelState.Mode) {
         withClash {
-            val override = queryOverride(Clash.OverrideSlot.Session)
-            override.mode = mode
-            patchOverride(Clash.OverrideSlot.Session, override)
+            listOf(Clash.OverrideSlot.Persist, Clash.OverrideSlot.Session).forEach { slot ->
+                val override = queryOverride(slot)
+                override.mode = mode
+                patchOverride(slot, override)
+            }
         }
         setMode(mode)
+    }
+
+    private suspend fun applyPersistedModeBeforeStart() {
+        withClash {
+            val persistedMode = queryOverride(Clash.OverrideSlot.Persist).mode ?: return@withClash
+            val sessionOverride = queryOverride(Clash.OverrideSlot.Session)
+            sessionOverride.mode = persistedMode
+            patchOverride(Clash.OverrideSlot.Session, sessionOverride)
+        }
     }
 
     private fun MainDesign.showCodeImportDialog() {
@@ -606,6 +617,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
 
+        applyPersistedModeBeforeStart()
         val vpnRequest = startClashService()
 
         try {
@@ -944,27 +956,16 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         try {
             val (groupName, nodes, selected) = withClash {
-                val names = queryProxyGroupNames(true)
-                val groups = names.map { name ->
-                    name to queryProxyGroup(name, ProxySort.Delay)
-                }
-                val preferred = groups.firstOrNull { (name, group) ->
-                    val lower = name.lowercase(Locale.ROOT)
-                    group.type == Proxy.Type.Selector &&
-                            group.proxies.any { !it.type.group && it.type != Proxy.Type.Direct && it.type != Proxy.Type.Reject } &&
-                            (name.contains("节点") ||
-                                    name.contains("选择") ||
-                                    lower.contains("proxy") ||
-                                    lower.contains("select"))
-                } ?: groups.firstOrNull { (_, group) ->
-                    group.type == Proxy.Type.Selector &&
-                            group.proxies.any { !it.type.group && it.type != Proxy.Type.Direct && it.type != Proxy.Type.Reject }
-                }
+                val mode = queryTunnelState().mode
+                val preferredName = ProxyGroupResolver.visibleGroupNames(
+                    mode,
+                    queryProxyGroupNames(true),
+                ).firstOrNull()
 
-                if (preferred == null) {
+                if (preferredName == null) {
                     Triple("", emptyList<Proxy>(), "")
                 } else {
-                    val (preferredName, group) = preferred
+                    val group = queryProxyGroup(preferredName, ProxySort.Delay)
                     Triple(
                         preferredName,
                         group.proxies.filter { !it.type.group && it.type != Proxy.Type.Direct && it.type != Proxy.Type.Reject },
