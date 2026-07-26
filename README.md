@@ -188,8 +188,8 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 当前本地版本：
 
 ```text
-versionCode: 211036
-versionName: 2.11.36.Meta
+versionCode: 211046
+versionName: 2.11.46.Meta
 ```
 
 后台 APK 更新配置里的 `latest_version_code` 要使用 `211036` 或更高。
