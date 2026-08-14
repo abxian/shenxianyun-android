@@ -175,6 +175,14 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 - 改应用名称和图标：`design/src/main/res/values/strings.xml`、`app/src/main/res/mipmap-*`。
 - 改 VPN 服务行为：`service/` 目录。
 
+## 精确流量计数与品牌边界
+
+- 计费读取 Mihomo 核心原始累计字节，上传与下载分别上报；界面缩放流量不得作为计费数据。
+- v2 使用 `counter_id`、递增 `sequence`、`upload_total`、`download_total`；失败保留待确认累计值，成功后才推进，且只允许一个请求在途。
+- 计数状态持久化到本品牌激活存储；Activity 重建或异常退出后继续重试，核心累计回退时安全换新计数器。
+- 用量与设备状态即使被后台隐藏也继续记账和执行限制；客户端不提供用户显示开关。
+- 本仓库只发布神仙云 Android。提交、标签、签名 APK、Dufs 和 sxnn `/api/app-version` 均须独立验收，禁止混入 52nm 资产。
+
 ## 发布前检查
 
 1. 安装 APK。
