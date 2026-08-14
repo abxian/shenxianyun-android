@@ -183,6 +183,7 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 - 用量与设备状态即使被后台隐藏也继续记账和执行限制；客户端不提供用户显示开关。
 - 本仓库只发布神仙云 Android。提交、标签、签名 APK、Dufs 和 sxnn `/api/app-version` 均须独立验收，禁止混入 52nm 资产。
 - NAS 同步使用本仓库的 `scripts/nas-sync-android-release.py` 部署副本。先对新标签执行 `--dry-run`，再不带 `--dry-run` 正式发布；脚本固定仓库和 `/sxy`，只管理 Android APK、metadata 和状态文件，不触碰 PC 资产。
+- `--tag` 可省略；省略时脚本只读取 GitHub `latest` 指向的最新正式稳定版（不会选择 draft/prerelease）。NAS 常用命令为 `android-sxnn-sync-to-dufs.py --dry-run`，确认后执行 `android-sxnn-sync-to-dufs.py`。
 - 脚本强制正式 Release、稳定标签、版本递增、8 个必要资产、metadata 版本/versionCode、GitHub SHA-256、固定别名一致性；完整暂存后动态备份并原子替换，失败自动恢复。
 
 ## 发布前检查
