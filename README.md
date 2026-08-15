@@ -205,7 +205,7 @@ shenxianyun://install-config?url=<encoded subscription url>&name=<encoded name>
 
 ```text
 versionCode: 211048
-versionName: 2.11.48.Meta
+versionName: 2.11.49.Meta
 ```
 
 后台 APK 更新配置里的 `latest_version_code` 要使用 `211048` 或更高。
