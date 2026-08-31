@@ -58,6 +58,13 @@ class MainActivity : BaseActivity<MainDesign>() {
     private var selectedMode = TunnelState.Mode.Rule
     private val subscriptionRefreshMutex = Mutex()
 
+    // presence 上报节流状态。sendClientHeartbeat 由多个事件（ClashStart/ClashStop、
+    // 心跳定时器、ServiceRecreated）驱动，这里统一挡住重复触发与限流后的硬打。
+    private var lastPresenceStatus: String? = null
+    private var lastPresenceSentAt = 0L
+    private var presenceRetryUntil = 0L
+    private var presenceFailureCount = 0
+
     private enum class TrafficReportResult {
         Success,
         CounterReset,
@@ -106,6 +113,13 @@ class MainActivity : BaseActivity<MainDesign>() {
         const val UPDATE_CHECK_MAX_INTERVAL_MILLIS = 3_600_000L
         const val HEARTBEAT_INTERVAL_MILLIS = 120_000L
         const val HEARTBEAT_JITTER_MILLIS = 20_000L
+        // presence 上报节流。同一状态在该窗口内不重复上报；心跳间隔 120s，
+        // 正常节奏不受影响，但能挡住事件重复触发导致的上报风暴
+        // （2026-08-31 桌面端曾因此出现 2.7-10.7 次/秒的风暴）。
+        const val PRESENCE_MIN_INTERVAL_MILLIS = 15_000L
+        // 服务端 429 时的兜底退避（未给出 Retry-After 时使用）。
+        const val PRESENCE_RETRY_AFTER_FALLBACK_MILLIS = 15_000L
+        const val PRESENCE_MAX_BACKOFF_MILLIS = 300_000L
         const val EXPIRY_SYNC_INTERVAL_MILLIS = 60_000L
         const val TRAFFIC_REPORT_INTERVAL_MILLIS = 300_000L
         const val TRAFFIC_REPORT_JITTER_MILLIS = 60_000L
@@ -137,6 +151,26 @@ class MainActivity : BaseActivity<MainDesign>() {
         if (current.startsWith("$id|")) {
             activationStore().edit().remove(KEY_PENDING_PRESENCE).apply()
         }
+    }
+
+    /**
+     * 记录一次 presence 被反代限流（429）。按 Retry-After 指数退避，
+     * 封顶 [PRESENCE_MAX_BACKOFF_MILLIS]。反代已配置 limit_req_status 429 + Retry-After。
+     */
+    private fun markPresenceRateLimited(retryAfterHeader: String?) {
+        presenceFailureCount += 1
+        val seconds = retryAfterHeader?.trim()?.toLongOrNull() ?: 0L
+        val base = (if (seconds > 0) seconds * 1000L else PRESENCE_RETRY_AFTER_FALLBACK_MILLIS)
+            .coerceAtMost(PRESENCE_MAX_BACKOFF_MILLIS)
+        val backoff = (base shl (presenceFailureCount - 1).coerceIn(0, 20))
+            .coerceAtMost(PRESENCE_MAX_BACKOFF_MILLIS)
+        presenceRetryUntil = System.currentTimeMillis() + backoff
+    }
+
+    /** 上报被服务端接受，清空退避。 */
+    private fun markPresenceAccepted() {
+        presenceFailureCount = 0
+        presenceRetryUntil = 0L
     }
 
     private data class SubscriptionUpdateState(
@@ -515,6 +549,17 @@ class MainActivity : BaseActivity<MainDesign>() {
         if (code.isBlank()) {
             return@withContext
         }
+        // 节流闸门：限流退避期内一律不发；同一状态在最小间隔内不重复发。
+        // 状态真正发生变化（online↔offline）时允许立即发出。
+        val now = System.currentTimeMillis()
+        if (now < presenceRetryUntil) {
+            return@withContext
+        }
+        if (status == lastPresenceStatus && now - lastPresenceSentAt < PRESENCE_MIN_INTERVAL_MILLIS) {
+            return@withContext
+        }
+        lastPresenceStatus = status
+        lastPresenceSentAt = now
         // 只保存最后一次期望状态，不堆积历史心跳；离线会覆盖更早的在线。
         val pendingId = savePendingPresence(code, status)
         val appVersion = queryAppVersionName().asHeaderValue()
@@ -549,7 +594,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                 val json = runCatching {
                     JSONObject(stream?.bufferedReader()?.use { it.readText() }.orEmpty())
                 }.getOrNull()
-                if (
+                if (statusCode == 429) {
+                    markPresenceRateLimited(connection.getHeaderField("Retry-After"))
+                } else if (
                     status != "offline" &&
                     statusCode == 403 &&
                     (json?.optString("code") == "device_limit" ||
@@ -567,6 +614,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                     syncActivationExpiresAt(code, json.optString("expires_at", ""))
                 }
                 if (statusCode in 200..299 && json?.optBoolean("ok", false) == true) {
+                    markPresenceAccepted()
                     clearPendingPresence(pendingId)
                 }
             } catch (_: Exception) {
@@ -601,7 +649,9 @@ class MainActivity : BaseActivity<MainDesign>() {
             val json = runCatching {
                 JSONObject(stream?.bufferedReader()?.use { it.readText() }.orEmpty())
             }.getOrNull()
-            if (
+            if (statusCode == 429) {
+                markPresenceRateLimited(connection.getHeaderField("Retry-After"))
+            } else if (
                 status != "offline" &&
                 statusCode in 200..299 &&
                 json?.optBoolean("ok", false) == true
@@ -609,6 +659,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 syncActivationExpiresAt(code, json.optString("expires_at", ""))
             }
             if (statusCode in 200..299 && json?.optBoolean("ok", false) == true) {
+                markPresenceAccepted()
                 clearPendingPresence(pendingId)
             }
         } catch (_: Exception) {
