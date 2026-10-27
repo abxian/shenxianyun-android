@@ -38,9 +38,18 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     private val binding = DesignMainBinding
         .inflate(context.layoutInflater, context.root, false)
     private var currentClashRunning = false
+    private var starting = false
 
     override val root: View
         get() = binding.root
+
+    fun enteredAccessCode(): String = binding.accessCodeInput.text.toString().trim()
+
+    suspend fun setStarting(value: Boolean) = withContext(Dispatchers.Main) {
+        starting = value
+        binding.powerButton.isEnabled = !value
+        binding.accessCodeInput.isEnabled = !value
+    }
 
     suspend fun setProfileName(name: String?) {
         withContext(Dispatchers.Main) {
@@ -241,6 +250,12 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     }
 
     init {
+        binding.accessCodeInput.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
+                request(Request.ToggleStatus)
+                true
+            } else false
+        }
         binding.self = this
 
         binding.colorClashStarted = context.resolveThemedColor(com.google.android.material.R.attr.colorPrimary)
@@ -248,6 +263,8 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     }
 
     fun request(request: Request) {
+        if (starting) return
+        if (!currentClashRunning && request !in setOf(Request.ToggleStatus, Request.ImportByCode)) return
         if (request == Request.ToggleStatus && !currentClashRunning) {
             playStartEffect()
         }

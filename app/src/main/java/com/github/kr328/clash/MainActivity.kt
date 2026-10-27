@@ -57,6 +57,8 @@ import com.github.kr328.clash.design.R
 class MainActivity : BaseActivity<MainDesign>() {
     private var selectedMode = TunnelState.Mode.Rule
     private val subscriptionRefreshMutex = Mutex()
+    private var powerOperationInFlight = false
+    private var hadRunningTunnel = false
 
     private enum class TrafficReportResult {
         Success,
@@ -260,10 +262,12 @@ class MainActivity : BaseActivity<MainDesign>() {
                         Event.ActivityStart -> {
                             launch { design.safeFetch() }
                             launchExpirySync()
+                            launch { design.refreshSubscriptionOnProcessStart() }
                         }
                         Event.ServiceRecreated,
                         Event.ProfileLoaded, Event.ProfileChanged -> launch { design.safeFetch() }
                         Event.ClashStart -> {
+                            hadRunningTunnel = true
                             trafficCounterId = UUID.randomUUID().toString()
                             trafficCounterSequence = 0L
                             trafficCounterBase = TrafficTotals(0L, 0L)
@@ -284,6 +288,13 @@ class MainActivity : BaseActivity<MainDesign>() {
                             lastReportedTrafficTotal = null
                             pendingTrafficTotal = null
                             launch { sendClientHeartbeat("offline") }
+                            if (hadRunningTunnel) {
+                                hadRunningTunnel = false
+                                launch {
+                                    val code = savedActivationCode()
+                                    if (code.isNotBlank()) design.importSubscriptionCode(code, silent = true, notifySuccess = false)
+                                }
+                            }
                         }
                         else -> Unit
                     }
@@ -291,12 +302,32 @@ class MainActivity : BaseActivity<MainDesign>() {
                 design.requests.onReceive {
                     when (it) {
                         MainDesign.Request.ToggleStatus -> {
-                            runCatching {
-                                if (clashRunning)
-                                    stopClashService()
-                                else
-                                    design.startClash()
-                            }.onFailure { design.showExceptionToast(it.asException()) }
+                            if (!powerOperationInFlight) {
+                                powerOperationInFlight = true
+                                launch {
+                                    design.setStarting(true)
+                                    try {
+                                        if (clashRunning) stopClashService()
+                                        else {
+                                            val entered = design.enteredAccessCode()
+                                            if (savedActivationCode().isBlank()) {
+                                                if (entered.isBlank()) {
+                                                    design.showToast(R.string.import_code_empty, ToastDuration.Long)
+                                                } else if (design.importSubscriptionCode(entered)) {
+                                                    design.startClash()
+                                                }
+                                            } else design.startClash()
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        design.showExceptionToast(e)
+                                    } finally {
+                                        powerOperationInFlight = false
+                                        design.setStarting(false)
+                                    }
+                                }
+                            }
                         }
                         MainDesign.Request.ImportByCode ->
                             design.showCodeImportDialog()
@@ -806,6 +837,7 @@ class MainActivity : BaseActivity<MainDesign>() {
     }
 
     private suspend fun MainDesign.fetch() {
+        if (clashRunning) hadRunningTunnel = true
         setClashRunning(clashRunning)
         setActivationCode(savedActivationCode().ifBlank { null })
         setActivationExpiresAt(
@@ -939,8 +971,7 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         var completed = false
         try {
-            importSubscriptionCode(code, silent = true, notifySuccess = false)
-            completed = true
+            completed = importSubscriptionCode(code, silent = true, notifySuccess = false)
         } finally {
             startupSubscriptionRefreshState.set(if (completed) 2 else 0)
         }
@@ -951,6 +982,8 @@ class MainActivity : BaseActivity<MainDesign>() {
         silent: Boolean = false,
         notifySuccess: Boolean = true,
     ): Boolean = subscriptionRefreshMutex.withLock {
+        // A queued refresh must not restore the code that the user has just replaced.
+        if (silent && savedActivationCode() != code) return@withLock false
         try {
             if (!silent) {
                 showToast(R.string.import_code_fetching, ToastDuration.Long)
@@ -1013,7 +1046,9 @@ class MainActivity : BaseActivity<MainDesign>() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (!silent || existing == null) throw error
+                // A transport failure is not an authorization failure: do not rotate a
+                // working tunnel's token just because the subscription host is unreachable.
+                if (!silent || existing == null || error !is ManagedSubscriptionUnauthorized) throw error
                 val apiBase = existing.apiBase.ifBlank { EndpointResolver.apiBase() }
                 val ticket = issueManagedImportTicket(code, apiBase)
                 credentials = exchangeManagedImportTicket(
@@ -1280,7 +1315,9 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
 
-        importSubscriptionCode(code, silent = true)
+        if (!importSubscriptionCode(code, silent = true)) {
+            throw IllegalStateException("订阅更新未完成，保留原配置并等待重试")
+        }
     }
 
     // 生成只含单个本地不可上网节点的占位配置：除订阅/续费域名直连外，其余流量全部
