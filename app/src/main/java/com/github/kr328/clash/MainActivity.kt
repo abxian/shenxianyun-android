@@ -1256,7 +1256,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             if (savedActivationCode() != code) return
             store.edit().putString(KEY_ACCESS_RESTRICTION, error.reason).apply()
             setRenewalNeeded(error.reason == "expired" || error.reason == "traffic_limit")
-            if (clashRunning) enforceClientLimit(error.message)
+            if (clashRunning) enforceClientLimit(error.message ?: "订阅暂不可用")
             throw error
         }
         if (savedActivationCode() != code) return
