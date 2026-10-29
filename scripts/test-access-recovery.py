@@ -15,6 +15,9 @@ assert 'readManagedUpdateState(code, stableClientId())' in s
 assert 'if (status == 403 || status == 404) throw AccessStateRejected' in s
 assert 'NET_CAPABILITY_NOT_VPN' in network[network.index('internal suspend fun Context.readManagedUpdateState'):]
 assert 'renewalNeeded' in layout and 'Request.RenewCode' in layout
+assert 'activationCode == null ? View.GONE : View.VISIBLE' in layout
+assert '!clashRunning || activationExpiresAt == null' not in layout
+assert '@string/activation_expiry_pending' in layout
 assert 'lastSubscriptionUpdateCheck = 0L' in s
 assert 'recoverFromExpired' not in s, 'Old token-rotating recovery must be removed'
 assert s.index('if (code.isNotBlank() && onCodeTrack)') < s.index('checkSubscriptionUpdate()',s.index('if (code.isNotBlank() && onCodeTrack)')) < s.index('val vpnRequest = startClashService()')
