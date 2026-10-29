@@ -58,6 +58,8 @@ import com.github.kr328.clash.design.R
 class MainActivity : BaseActivity<MainDesign>() {
     private var selectedMode = TunnelState.Mode.Rule
     private val subscriptionRefreshMutex = Mutex()
+    private val accessStateMutex = Mutex()
+    private var subscriptionCheckNotBefore = 0L
     private var powerOperationInFlight = false
     private var hadRunningTunnel = false
 
@@ -1245,6 +1247,8 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     // A lightweight authoritative status read is independent of VPN state.
     private suspend fun MainDesign.checkSubscriptionUpdate() {
+        accessStateMutex.withLock {
+        if (System.currentTimeMillis() < subscriptionCheckNotBefore) throw IllegalStateException("服务端要求稍后检查")
         val code = savedActivationCode()
         if (code.isBlank()) return
         val active = withProfile { queryActive() } ?: return
@@ -1252,7 +1256,10 @@ class MainActivity : BaseActivity<MainDesign>() {
         val store = activationStore()
         val wasRestricted = store.getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() || onExpiredPlaceholder()
         val oldExpiry = store.getString(KEY_EXPIRES_AT, "").orEmpty()
-        val state = try { queryUpdateState(code) } catch (error: AccessStateRejected) {
+        val state = try { queryUpdateState(code) } catch (error: ManagedStateRetryAfter) {
+            subscriptionCheckNotBefore = System.currentTimeMillis() + error.delayMillis
+            throw error
+        } catch (error: AccessStateRejected) {
             if (savedActivationCode() != code) return
             store.edit().putString(KEY_ACCESS_RESTRICTION, error.reason).apply()
             setRenewalNeeded(error.reason == "expired" || error.reason == "traffic_limit")
@@ -1276,6 +1283,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         store.edit().remove(KEY_ACCESS_RESTRICTION).apply()
         syncActivationExpiresAt(code, state.expiresAt)
         setRenewalNeeded(false)
+        }
     }
 
     // 生成只含单个本地不可上网节点的占位配置：除订阅/续费域名直连外，其余流量全部

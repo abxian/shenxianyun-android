@@ -341,6 +341,8 @@ internal fun subscriptionRetryDelayMillis(retryNumber: Int): Long =
     (1_200L shl (retryNumber - 1).coerceAtLeast(0)).coerceAtMost(4_800L)
 
 
+internal class ManagedStateRetryAfter(val delayMillis: Long) : IllegalStateException("服务端要求稍后检查")
+
 /** Status must remain reachable when the active tunnel's nodes are blocked. */
 internal suspend fun Context.readManagedUpdateState(code: String, clientId: String): Pair<Int, JSONObject> = withContext(Dispatchers.IO) {
     val encoded = java.net.URLEncoder.encode(code, "UTF-8").replace("+", "%20")
@@ -364,6 +366,10 @@ internal suspend fun Context.readManagedUpdateState(code: String, clientId: Stri
                 setRequestProperty("Cache-Control", "no-cache")
             }
             val status = connection.responseCode
+            if (status == 429 || status == 503) {
+                val seconds = connection.getHeaderField("Retry-After")?.toLongOrNull() ?: 30L
+                throw ManagedStateRetryAfter(seconds.coerceIn(1L, 3600L) * 1000L)
+            }
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             return@withContext status to JSONObject(stream?.bufferedReader()?.use { it.readText() }.orEmpty())
         } catch (error: IOException) { failure = error
