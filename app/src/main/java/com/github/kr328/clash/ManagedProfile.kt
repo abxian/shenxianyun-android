@@ -339,3 +339,35 @@ internal fun Context.isManagedProfile(uuid: UUID): Boolean =
 
 internal fun subscriptionRetryDelayMillis(retryNumber: Int): Long =
     (1_200L shl (retryNumber - 1).coerceAtLeast(0)).coerceAtMost(4_800L)
+
+
+/** Status must remain reachable when the active tunnel's nodes are blocked. */
+internal suspend fun Context.readManagedUpdateState(code: String, clientId: String): Pair<Int, JSONObject> = withContext(Dispatchers.IO) {
+    val encoded = java.net.URLEncoder.encode(code, "UTF-8").replace("+", "%20")
+    val cid = java.net.URLEncoder.encode(clientId, "UTF-8")
+    val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val underlying = manager.allNetworks.filter { network ->
+        manager.getNetworkCapabilities(network)?.let {
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        } == true
+    }.take(1)
+    var failure: IOException? = null
+    for (network in underlying + listOf<Network?>(null)) {
+        var connection: HttpURLConnection? = null
+        try {
+            val url = URL("${EndpointResolver.apiBase()}/api/update-state/$encoded?client_id=$cid")
+            connection = ((network?.openConnection(url) ?: url.openConnection()) as HttpURLConnection).apply {
+                connectTimeout = 8_000; readTimeout = 8_000; requestMethod = "GET"
+                instanceFollowRedirects = false
+                setRequestProperty("X-Client-Id", clientId)
+                setRequestProperty("User-Agent", "Shenxianyun-Android/Managed")
+                setRequestProperty("Cache-Control", "no-cache")
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            return@withContext status to JSONObject(stream?.bufferedReader()?.use { it.readText() }.orEmpty())
+        } catch (error: IOException) { failure = error
+        } finally { connection?.disconnect() }
+    }
+    throw failure ?: IOException("服务网络暂不可用")
+}

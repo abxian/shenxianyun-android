@@ -69,6 +69,10 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         }
     }
 
+    suspend fun setRenewalNeeded(value: Boolean) = withContext(Dispatchers.Main) {
+        binding.renewalNeeded = value
+    }
+
     suspend fun setClashRunning(running: Boolean) {
         withContext(Dispatchers.Main) {
             currentClashRunning = running

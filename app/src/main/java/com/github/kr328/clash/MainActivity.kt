@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -106,16 +107,17 @@ class MainActivity : BaseActivity<MainDesign>() {
         const val KEY_EXPIRES_AT = "expires_at"
         const val KEY_PROFILE_UUID = "profile_uuid"
         const val KEY_UPDATE_VERSION = "update_version"
+        const val KEY_SUBSCRIPTION_REVISION = "subscription_revision"
+        const val KEY_ACCESS_RESTRICTION = "access_restriction"
         const val KEY_CLIENT_ID = "client_id"
         const val KEY_PENDING_PRESENCE = "pending_presence"
         const val KEY_TRAFFIC_COUNTER = "managed_traffic_counter_v2"
         const val KEY_EXPIRED_PROFILE_UUID = "expired_profile_uuid"
-        // 订阅更新轮询：仅在已连接时运行，基础 10 分钟，失败指数退避到最多 1 小时。
-        const val UPDATE_CHECK_INTERVAL_MILLIS = 600_000L
-        const val UPDATE_CHECK_MAX_INTERVAL_MILLIS = 3_600_000L
+        // 前台或VPN运行均检查：基础30秒，失败指数退避，后台返回立即唤醒。
+        const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
+        const val UPDATE_CHECK_MAX_INTERVAL_MILLIS = 300_000L
         const val HEARTBEAT_INTERVAL_MILLIS = 120_000L
         const val HEARTBEAT_JITTER_MILLIS = 20_000L
-        const val EXPIRY_SYNC_INTERVAL_MILLIS = 60_000L
         const val TRAFFIC_REPORT_INTERVAL_MILLIS = 300_000L
         const val TRAFFIC_REPORT_JITTER_MILLIS = 60_000L
         const val TRAFFIC_REPORT_MAX_BACKOFF_MILLIS = 1_800_000L
@@ -151,14 +153,13 @@ class MainActivity : BaseActivity<MainDesign>() {
     private data class SubscriptionUpdateState(
         val updateVersion: Long?,
         val expiresAt: String?,
+        val revision: String?,
     )
 
     override suspend fun main() {
         val design = MainDesign(this)
         stableClientId()
 
-        var lastExpirySyncAt = System.currentTimeMillis()
-        var expirySyncInFlight = true
 
         // 端点发现：后台拉取 endpoints.json 并探测可用 API 基址（失败静默，用缓存/内置默认）。
         // 必须放独立协程，绝不能阻塞下面的 select 事件循环。
@@ -178,8 +179,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 }
                 design.refreshSubscriptionOnProcessStart()
             } finally {
-                lastExpirySyncAt = System.currentTimeMillis()
-                expirySyncInFlight = false
+                // Startup and periodic refresh share the same subscription mutex.
             }
         }
 
@@ -224,34 +224,6 @@ class MainActivity : BaseActivity<MainDesign>() {
         var subscriptionFailures = 0
         var subscriptionCheckDelay = UPDATE_CHECK_INTERVAL_MILLIS
 
-        fun launchExpirySync() {
-            val code = savedActivationCode()
-            val now = System.currentTimeMillis()
-            if (
-                clashRunning ||
-                !activityStarted ||
-                code.isBlank() ||
-                expirySyncInFlight ||
-                now - lastExpirySyncAt < EXPIRY_SYNC_INTERVAL_MILLIS
-            ) {
-                return
-            }
-
-            expirySyncInFlight = true
-            launch {
-                try {
-                    design.syncActivationState(code)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    runCatching { EndpointResolver.rotate() }
-                } finally {
-                    lastExpirySyncAt = System.currentTimeMillis()
-                    expirySyncInFlight = false
-                }
-            }
-        }
-
         while (isActive) {
             select<Unit> {
                 events.onReceive {
@@ -261,7 +233,8 @@ class MainActivity : BaseActivity<MainDesign>() {
                     when (it) {
                         Event.ActivityStart -> {
                             launch { design.safeFetch() }
-                            launchExpirySync()
+                            // Returning from payment must not wait for the periodic timer.
+                            lastSubscriptionUpdateCheck = 0L
                             launch { design.refreshSubscriptionOnProcessStart() }
                         }
                         Event.ServiceRecreated,
@@ -475,19 +448,22 @@ class MainActivity : BaseActivity<MainDesign>() {
                             }
                         }
                     } else {
-                        // 核心未运行但首页在前台时，轻量同步续费后的到期时间；不下载订阅、
-                        // 不发送在线心跳，也不占用在线设备名额。
-                        launchExpirySync()
+                        // Subscription checks below continue with the VPN stopped.
                     }
-                    // 仅在已连接、无在途请求、且到达（含退避后的）间隔时才发起更新检查。
-                    if (clashRunning &&
+                    // VPN停止也继续检查；不修改用户连接意图。
+                    if ((clashRunning || activityStarted) &&
+                        !powerOperationInFlight && !subscriptionRefreshMutex.isLocked &&
                         !subscriptionUpdateInFlight &&
                         now - lastSubscriptionUpdateCheck >= subscriptionCheckDelay
                     ) {
                         lastSubscriptionUpdateCheck = now
                         subscriptionUpdateInFlight = true
                         launch {
-                            val ok = runCatching { design.checkSubscriptionUpdate() }.isSuccess
+                            val ok = try {
+                                design.checkSubscriptionUpdate()
+                                true
+                            } catch (error: CancellationException) { throw error
+                            } catch (_: Exception) { false }
                             subscriptionFailures = if (ok) 0 else minOf(subscriptionFailures + 1, 4)
                             // 失败可能是当前 API 线路失联：后台切到下一条可用线路（api_bases 顺延）。
                             if (!ok) runCatching { EndpointResolver.rotate() }
@@ -496,7 +472,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                                 UPDATE_CHECK_MAX_INTERVAL_MILLIS,
                             )
                             // 50%~100% 抖动，打散各客户端的请求时间。
-                            subscriptionCheckDelay = (backoff * (0.5 + Math.random() * 0.5)).toLong()
+                            subscriptionCheckDelay = (backoff * (0.8 + Math.random() * 0.4)).toLong()
                             subscriptionUpdateInFlight = false
                         }
                     }
@@ -606,10 +582,14 @@ class MainActivity : BaseActivity<MainDesign>() {
                     (json?.optString("code") == "device_limit" ||
                         json?.optString("code") == "traffic_limit")
                 ) {
-                    enforceClientLimit(
+                    if (savedActivationCode() == code && loadManagedCredentials()?.deviceToken == credentials.deviceToken) {
+                        activationStore().edit().putString(KEY_ACCESS_RESTRICTION, json?.optString("code", "unavailable")).apply()
+                        design?.setRenewalNeeded(json?.optString("code") == "traffic_limit")
+                        enforceClientLimit(
                         json?.optString("message", "套餐设备或流量额度已达到上限")
                             ?: "套餐设备或流量额度已达到上限",
-                    )
+                        )
+                    }
                 } else if (
                     status != "offline" &&
                     statusCode in 200..299 &&
@@ -719,6 +699,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                     statusCode == 409 && json?.optString("code") == "counter_reset" ->
                         TrafficReportResult.CounterReset
                     statusCode == 403 && json?.optString("code") == "traffic_limit" -> {
+                        if (savedActivationCode() != code || loadManagedCredentials()?.deviceToken != credentials.deviceToken) return@withContext TrafficReportResult.Failure
+                        activationStore().edit().putString(KEY_ACCESS_RESTRICTION, "traffic_limit").apply()
+                        design?.setRenewalNeeded(true)
                         enforceClientLimit(
                             json?.optString("message", "流量额度已用尽，代理已停止")
                                 ?: "流量额度已用尽，代理已停止",
@@ -840,9 +823,11 @@ class MainActivity : BaseActivity<MainDesign>() {
         if (clashRunning) hadRunningTunnel = true
         setClashRunning(clashRunning)
         setActivationCode(savedActivationCode().ifBlank { null })
-        setActivationExpiresAt(
-            normalizedExpiresAt(activationStore().getString(KEY_EXPIRES_AT, null)),
-        )
+        setActivationExpiresAt(normalizedExpiresAt(activationStore().getString(KEY_EXPIRES_AT, null)))
+        setRenewalNeeded(savedActivationCode().isNotBlank() && (
+            activationStore().getString(KEY_ACCESS_RESTRICTION, "") in listOf("expired", "traffic_limit") ||
+                isExpired(activationStore().getString(KEY_EXPIRES_AT, "").orEmpty())
+        ))
 
         val state = withClash {
             queryTunnelState()
@@ -953,8 +938,8 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private fun MainDesign.showExpiredDialog() {
         AlertDialog.Builder(this@MainActivity)
-            .setTitle(R.string.import_code_expired_title)
-            .setMessage(R.string.import_code_expired_message)
+            .setTitle(if (activationStore().getString(KEY_ACCESS_RESTRICTION, "") == "traffic_limit") "流量额度已用尽" else getString(R.string.import_code_expired_title))
+            .setMessage("网站续费、管理员加时或额度恢复后，将自动更新当前订阅，无需重新导入。")
             .setPositiveButton(R.string.renew_code) { _, _ -> openCodeStorePage() }
             .setNeutralButton(R.string.import_by_code) { _, _ ->
                 showCodeImportDialog()
@@ -969,11 +954,13 @@ class MainActivity : BaseActivity<MainDesign>() {
             return
         }
 
-        var completed = false
         try {
-            completed = importSubscriptionCode(code, silent = true, notifySuccess = false)
+            checkSubscriptionUpdate()
+        } catch (error: CancellationException) { throw error
+        } catch (_: Exception) {
+            // Keep the restriction/old configuration and let the monitor retry.
         } finally {
-            startupSubscriptionRefreshState.set(if (completed) 2 else 0)
+            if (startupSubscriptionRefreshState.get() == 1) startupSubscriptionRefreshState.set(0)
         }
     }
 
@@ -1041,31 +1028,13 @@ class MainActivity : BaseActivity<MainDesign>() {
                 // 自动刷新不能只相信客户端内缓存的旧日期。续费后服务端可能已经延长
                 // 设备令牌，继续尝试拉取；若确实过期，服务端会拒绝且旧配置保持不变。
             }
-            val content = try {
-                fetchManagedSubscription(credentials)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                // A transport failure is not an authorization failure: do not rotate a
-                // working tunnel's token just because the subscription host is unreachable.
-                if (!silent || existing == null || error !is ManagedSubscriptionUnauthorized) throw error
-                val apiBase = existing.apiBase.ifBlank { EndpointResolver.apiBase() }
-                val ticket = issueManagedImportTicket(code, apiBase)
-                credentials = exchangeManagedImportTicket(
-                    ticket,
-                    apiBase,
-                    stableClientId(),
-                ).copy(accessCode = code)
-                fetchManagedSubscription(credentials)
-            }
-            val updateState = try {
-                queryUpdateState(code)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            }
-            val expiresAt = updateState?.expiresAt ?: credentials.expiresAt
+            // Snapshot the revision BEFORE downloading. A newer update arriving
+            // during download must remain detectable on the next poll.
+            val updateState = queryUpdateState(code)
+            val content = fetchManagedSubscription(credentials)
+            if (silent && savedActivationCode() != code) return@withLock false
+            if (silent && savedActivationCode() != code) return@withLock false
+            val expiresAt = updateState.expiresAt.orEmpty()
             if (expiresAt != credentials.expiresAt) {
                 credentials = credentials.copy(expiresAt = expiresAt)
             }
@@ -1075,13 +1044,15 @@ class MainActivity : BaseActivity<MainDesign>() {
                 activeUuidBefore == expiredUuidBefore
             val uuid = installManagedProfile(code, content, activate = shouldActivate)
             saveManagedCredentials(credentials)
-            val updateVersion = updateState?.updateVersion
+            val updateVersion = updateState.updateVersion
                 ?: activationStore().getLong(KEY_UPDATE_VERSION, 0L)
             val editor = activationStore().edit()
                 .putString(KEY_CODE, code)
                 .putString(KEY_EXPIRES_AT, expiresAt)
                 .putString(KEY_PROFILE_UUID, uuid.toString())
                 .putLong(KEY_UPDATE_VERSION, updateVersion)
+                .remove(KEY_ACCESS_RESTRICTION)
+            updateState.revision?.let { editor.putString(KEY_SUBSCRIPTION_REVISION, it) }
             if (activeUuidBefore == expiredUuidBefore && expiredUuidBefore != null) {
                 withProfile { runCatching { delete(expiredUuidBefore) } }
                 editor.remove(KEY_EXPIRED_PROFILE_UUID)
@@ -1116,9 +1087,21 @@ class MainActivity : BaseActivity<MainDesign>() {
             ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         val onCodeTrack = active != null &&
             (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
-        if (code.isNotBlank() && onCodeTrack && !isActivationStillValid(code)) {
-            activateExpiredProfile()
-            showExpiredDialog()
+        if (code.isNotBlank() && onCodeTrack) {
+            // Always ask the authority even if the cached expiry is in the past.
+            try {
+                checkSubscriptionUpdate()
+            } catch (error: AccessStateRejected) {
+                showExpiredDialog()
+                return
+            } catch (error: CancellationException) { throw error
+            } catch (_: Exception) {
+                if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
+                    !isActivationStillValid(code) || onExpiredPlaceholder()) {
+                    showToast("尚未确认提取码恢复，请联网后重试", ToastDuration.Long)
+                    return
+                }
+            }
             active = withProfile { queryActive() }
         }
 
@@ -1166,7 +1149,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         value?.trim()?.takeIf { it.isNotBlank() && it != "null" }
 
     private suspend fun syncActivationExpiresAt(code: String, value: String?): Boolean {
-        val expiresAt = normalizedExpiresAt(value) ?: return false
+        val expiresAt = normalizedExpiresAt(value).orEmpty()
         if (savedActivationCode() != code) return false
 
         val store = activationStore()
@@ -1187,16 +1170,6 @@ class MainActivity : BaseActivity<MainDesign>() {
         return storedChanged
     }
 
-    private suspend fun MainDesign.syncActivationState(
-        code: String,
-    ): SubscriptionUpdateState? {
-        if (savedActivationCode() != code) return null
-        val state = queryUpdateState(code) ?: return null
-        if (savedActivationCode() != code) return null
-        syncActivationExpiresAt(code, state.expiresAt)
-        return state
-    }
-
     private fun openCodeStorePage() {
         val code = savedActivationCode()
         val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
@@ -1208,40 +1181,21 @@ class MainActivity : BaseActivity<MainDesign>() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
-    private suspend fun queryUpdateState(
-        code: String,
-    ): SubscriptionUpdateState? = withContext(Dispatchers.IO) {
-        val encoded = URLEncoder.encode(code, "UTF-8").replace("+", "%20")
-        val clientId = URLEncoder.encode(stableClientId(), "UTF-8")
-        val connection = (URL("${EndpointResolver.apiBase()}/api/update-state/$encoded?client_id=$clientId").openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
-            requestMethod = "GET"
-            setRequestProperty("X-Client-Id", stableClientId())
+    private class AccessStateRejected(val reason: String, message: String) : IllegalStateException(message)
+
+    private suspend fun queryUpdateState(code: String): SubscriptionUpdateState = withTimeout(30_000L) {
+        val (status, json) = readManagedUpdateState(code, stableClientId())
+        if (status !in 200..299 || !json.optBoolean("ok", false)) {
+            if (status == 403 || status == 404) throw AccessStateRejected(
+                json.optString("code", "unavailable"), json.optString("message", "订阅暂不可用"))
+            throw IllegalStateException("订阅状态检查暂不可用")
         }
-
-        try {
-            if (connection.responseCode !in 200..299) {
-                return@withContext null
-            }
-
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(body)
-            if (!json.optBoolean("ok", false)) {
-                return@withContext null
-            }
-
-            SubscriptionUpdateState(
-                updateVersion = json.optLong("update_version", 0L).takeIf { it > 0L },
-                expiresAt = normalizedExpiresAt(json.optString("expires_at", "")),
-            )
-        } finally {
-            connection.disconnect()
-        }
+        SubscriptionUpdateState(
+            updateVersion = json.optLong("update_version", 0L).takeIf { it > 0L },
+            expiresAt = normalizedExpiresAt(json.optString("expires_at", "")),
+            revision = json.optString("subscription_revision", "").takeIf { it.isNotBlank() },
+        )
     }
-
-    private suspend fun queryUpdateVersion(code: String): Long? =
-        queryUpdateState(code)?.updateVersion
 
     private suspend fun MainDesign.checkAppUpdate() {
         val update = withContext(Dispatchers.IO) {
@@ -1289,35 +1243,39 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
-    // 订阅更新轮询：仅在已连接时执行，空闲时不请求，降低服务器压力。
-    // 网络异常会向上抛出，交由调用方做指数退避。
+    // A lightweight authoritative status read is independent of VPN state.
     private suspend fun MainDesign.checkSubscriptionUpdate() {
-        if (!clashRunning) {
-            return
-        }
-
         val code = savedActivationCode()
-        if (code.isBlank()) {
-            return
+        if (code.isBlank()) return
+        val active = withProfile { queryActive() } ?: return
+        if (active.uuid != managedProfileUuid() && active.uuid != expiredProfileUuid()) return
+        val store = activationStore()
+        val wasRestricted = store.getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() || onExpiredPlaceholder()
+        val oldExpiry = store.getString(KEY_EXPIRES_AT, "").orEmpty()
+        val state = try { queryUpdateState(code) } catch (error: AccessStateRejected) {
+            if (savedActivationCode() != code) return
+            store.edit().putString(KEY_ACCESS_RESTRICTION, error.reason).apply()
+            setRenewalNeeded(error.reason == "expired" || error.reason == "traffic_limit")
+            if (clashRunning) enforceClientLimit(error.message)
+            throw error
         }
-
-        // 处于到期占位配置时，低频探测提取码是否已续费，成功则自动恢复正式订阅。
-        if (onExpiredPlaceholder()) {
-            recoverFromExpired(code)
-            return
+        if (savedActivationCode() != code) return
+        val expiryChanged = normalizedExpiresAt(oldExpiry) != state.expiresAt
+        val needsRefresh = shouldRefreshAccessSubscription(
+            startup = startupSubscriptionRefreshState.get() != 2,
+            restricted = wasRestricted, expiryChanged = expiryChanged,
+            localVersion = store.getLong(KEY_UPDATE_VERSION, 0L), remoteVersion = state.updateVersion ?: 0L,
+            localRevision = store.getString(KEY_SUBSCRIPTION_REVISION, ""), remoteRevision = state.revision,
+        )
+        if (needsRefresh) {
+            if (!importSubscriptionCode(code, silent = true, notifySuccess = false)) {
+                throw IllegalStateException("恢复订阅暂未完成，将自动重试")
+            }
         }
-
-        val updateState = syncActivationState(code) ?: return
-        val remoteVersion = updateState.updateVersion ?: return
-
-        val localVersion = activationStore().getLong(KEY_UPDATE_VERSION, 0L)
-        if (localVersion > 0L && remoteVersion <= localVersion) {
-            return
-        }
-
-        if (!importSubscriptionCode(code, silent = true)) {
-            throw IllegalStateException("订阅更新未完成，保留原配置并等待重试")
-        }
+        if (savedActivationCode() != code) return
+        store.edit().remove(KEY_ACCESS_RESTRICTION).apply()
+        syncActivationExpiresAt(code, state.expiresAt)
+        setRenewalNeeded(false)
     }
 
     // 生成只含单个本地不可上网节点的占位配置：除订阅/续费域名直连外，其余流量全部
@@ -1374,38 +1332,6 @@ class MainActivity : BaseActivity<MainDesign>() {
             queryByUUID(uuid)?.let { setActive(it) }
         }
         fetch()
-    }
-
-    // 续费恢复：签发一次性票据并轮换设备凭据，成功后替换正式订阅并删除占位配置。
-    private suspend fun MainDesign.recoverFromExpired(code: String) {
-        val apiBase = loadManagedCredentials()?.apiBase
-            ?.ifBlank { EndpointResolver.apiBase() }
-            ?: EndpointResolver.apiBase()
-        val ticket = issueManagedImportTicket(code, apiBase)
-        val credentials = exchangeManagedImportTicket(
-            ticket,
-            apiBase,
-            stableClientId(),
-        ).copy(accessCode = code)
-        if (isExpired(credentials.expiresAt)) return
-        val content = fetchManagedSubscription(credentials)
-        val expiredUuid = expiredProfileUuid()
-        val uuid = installManagedProfile(code, content)
-        saveManagedCredentials(credentials)
-        withProfile {
-            if (expiredUuid != null) {
-                runCatching { delete(expiredUuid) }
-            }
-        }
-        activationStore().edit()
-            .putString(KEY_CODE, code)
-            .putString(KEY_EXPIRES_AT, credentials.expiresAt)
-            .putString(KEY_PROFILE_UUID, uuid.toString())
-            .putLong(KEY_UPDATE_VERSION, queryUpdateVersion(code) ?: 0L)
-            .remove(KEY_EXPIRED_PROFILE_UUID)
-            .apply()
-        fetch()
-        showToast(R.string.subscription_recovered, ToastDuration.Long)
     }
 
     private suspend fun isActivationStillValid(code: String): Boolean {

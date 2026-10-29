@@ -27,6 +27,7 @@
         <variable
             name="activationCode"
             type="String" />
+        <variable name="renewalNeeded" type="boolean" />
         <variable
             name="activationExpiresAt"
             type="String" />
@@ -133,6 +134,15 @@
                     android:visibility="@{!clashRunning &amp;&amp; activationCode != null ? View.VISIBLE : View.GONE}"
                     app:icon="@drawable/ic_baseline_cloud_download"
                     app:text="@string/switch_import_code" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/renew_access_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp"
+                    android:onClick="@{() -> self.request(Request.RenewCode)}"
+                    android:text="@string/renew_code"
+                    android:visibility="@{!clashRunning &amp;&amp; renewalNeeded ? View.VISIBLE : View.GONE}" />
 
                 <FrameLayout
                     android:layout_width="218dp"
