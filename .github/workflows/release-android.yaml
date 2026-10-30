@@ -84,6 +84,11 @@ jobs:
             echo "key.password=$SIGNING_KEY_PASSWORD"
           } > signing.properties
 
+      - name: Verify service traffic accounting
+        run: |
+          python3 scripts/test-service-traffic.py
+          ./gradlew --no-daemon service:testMetaDebugUnitTest
+
       - name: Build signed Meta Release APK
         run: ./gradlew --no-daemon app:assembleMetaRelease
 
