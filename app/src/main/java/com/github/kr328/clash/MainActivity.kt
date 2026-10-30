@@ -32,7 +32,6 @@ import com.github.kr328.clash.util.withProfile
 import com.github.kr328.clash.core.bridge.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -54,6 +53,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import com.github.kr328.clash.design.R
 
@@ -66,8 +66,6 @@ class MainActivity : BaseActivity<MainDesign>() {
     private var hadRunningTunnel = false
     private var subscriptionRefreshJob: Deferred<Boolean>? = null
     private var subscriptionRefreshCode = ""
-    private var lastAccessCheckCode = ""
-    private var lastAccessCheckAt = 0L
 
     private data class TrafficTotals(val upload: Long, val download: Long) {
         operator fun minus(other: TrafficTotals) = TrafficTotals(
@@ -107,6 +105,7 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         // 2 means a download succeeded; foreground opens still force a fresh download.
         val startupSubscriptionRefreshState = AtomicInteger(0)
+        val openingRefreshRequested = AtomicBoolean(false)
     }
 
     private fun nextHeartbeatDelayMillis(): Long =
@@ -148,7 +147,8 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
         launch { runCatching { design.checkAppUpdate() } }
         launch { runCatching { EndpointResolver.initialize(); refreshLineStatus(design) } }
-        design.requestSubscriptionRefresh(force = true)
+        if (savedActivationCode().isNotBlank() && openingRefreshRequested.compareAndSet(false, true))
+            design.requestSubscriptionRefresh(force = true)
 
         val ticker = ticker(TimeUnit.SECONDS.toMillis(1))
         var lastSubscriptionUpdateCheck = 0L
@@ -169,7 +169,6 @@ class MainActivity : BaseActivity<MainDesign>() {
                             launch { design.safeFetch() }
                             // Returning from payment must not wait for the periodic timer.
                             lastSubscriptionUpdateCheck = 0L
-                            design.requestSubscriptionRefresh(force = true)
                         }
                         Event.ServiceRecreated,
                         Event.ProfileLoaded, Event.ProfileChanged -> launch { design.safeFetch() }
@@ -647,7 +646,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         val code = savedActivationCode()
         if (code.isBlank()) return null
         val existing = subscriptionRefreshJob
-        if (existing?.isActive == true && subscriptionRefreshCode == code) {
+        if (shouldReuseSubscriptionRefresh(subscriptionRefreshCode, code, existing?.isActive == true)) {
             return existing
         }
         subscriptionRefreshCode = code
@@ -741,7 +740,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             // Snapshot the revision BEFORE downloading. A newer update arriving
             // during download must remain detectable on the next poll.
             val updateState = knownState ?: queryUpdateState(code)
-            val content = fetchManagedSubscription(credentials)
+            val content = withTimeout(20_000) { fetchManagedSubscription(credentials) }
             if (silent && savedActivationCode() != code) return@withLock false
             val expiresAt = updateState.expiresAt.orEmpty()
             if (expiresAt != credentials.expiresAt) {
@@ -798,15 +797,10 @@ class MainActivity : BaseActivity<MainDesign>() {
         val onCodeTrack = active != null &&
             (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
         if (code.isNotBlank() && onCodeTrack) {
-            // Opening the app already owns one refresh. Share it instead of
-            // queuing another status request + download before the first start.
-            if (!canReuseAccessCheck(
-                    lastAccessCheckCode, code,
-                    android.os.SystemClock.elapsedRealtime() - lastAccessCheckAt,
-                )) {
-                val refresh = requestSubscriptionRefresh(force = false)
-                if (refresh != null) withTimeoutOrNull(1_500) { refresh.await() }
-            }
+            // Every Start requests current nodes. Share an in-flight same-code
+            // refresh, but a previously completed check never skips this update.
+            val refresh = requestSubscriptionRefresh(force = true)
+            if (refresh != null) refresh.await()
             if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
                 !isActivationStillValid(code) || onExpiredPlaceholder()) {
                 setSubscriptionStatus("请确认提取码有效并联网更新后重试", false)
@@ -977,8 +971,6 @@ class MainActivity : BaseActivity<MainDesign>() {
             throw error
         }
         if (savedActivationCode() != code) return
-        lastAccessCheckCode = code
-        lastAccessCheckAt = android.os.SystemClock.elapsedRealtime()
         val expiryChanged = normalizedExpiresAt(oldExpiry) != state.expiresAt
         val needsRefresh = shouldRefreshAccessSubscription(
             startup = forceDownload || startupSubscriptionRefreshState.get() != 2,
