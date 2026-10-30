@@ -45,6 +45,15 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
 
     fun enteredAccessCode(): String = binding.accessCodeInput.text.toString().trim()
 
+    suspend fun setSubscriptionStatus(text: String, updating: Boolean) = withContext(Dispatchers.Main) {
+        binding.subscriptionStatus = text
+        binding.subscriptionUpdating = updating
+    }
+
+    suspend fun setSubscriptionUpdating(updating: Boolean) = withContext(Dispatchers.Main) {
+        binding.subscriptionUpdating = updating
+    }
+
     suspend fun setStarting(value: Boolean) = withContext(Dispatchers.Main) {
         starting = value
         binding.powerButton.isEnabled = !value
@@ -267,8 +276,8 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     }
 
     fun request(request: Request) {
-        if (starting) return
-        if (!currentClashRunning && request !in setOf(Request.ToggleStatus, Request.ImportByCode)) return
+        if (starting && request != Request.UpdateSubscription) return
+        if (!currentClashRunning && request !in setOf(Request.ToggleStatus, Request.ImportByCode, Request.UpdateSubscription)) return
         if (request == Request.ToggleStatus && !currentClashRunning) {
             playStartEffect()
         }

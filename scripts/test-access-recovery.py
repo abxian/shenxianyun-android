@@ -9,7 +9,7 @@ network=(r/'app/src/main/java/com/github/kr328/clash/ManagedProfile.kt').read_te
 layout=(r/'design/src/main/res/layout/design_main.xml').read_text()
 assert '(clashRunning || activityStarted)' in s
 assert 'KEY_SUBSCRIPTION_REVISION' in s and 'KEY_ACCESS_RESTRICTION' in s
-assert 'val updateState = queryUpdateState(code)\n            val content = fetchManagedSubscription(credentials)' in s
+assert 'val updateState = knownState ?: queryUpdateState(code)\n            val content = fetchManagedSubscription(credentials)' in s
 assert 'error !is ManagedSubscriptionUnauthorized' not in s, 'Do not silently reauthorize revoked credentials'
 assert 'readManagedUpdateState(code, stableClientId())' in s
 assert 'if (status == 403 || status == 404) throw AccessStateRejected' in s
@@ -20,7 +20,7 @@ assert '!clashRunning || activationExpiresAt == null' not in layout
 assert '@string/activation_expiry_pending' in layout
 assert 'lastSubscriptionUpdateCheck = 0L' in s
 assert 'recoverFromExpired' not in s, 'Old token-rotating recovery must be removed'
-assert s.index('if (code.isNotBlank() && onCodeTrack)') < s.index('checkSubscriptionUpdate()',s.index('if (code.isNotBlank() && onCodeTrack)')) < s.index('val vpnRequest = startClashService()')
+assert s.index('if (code.isNotBlank() && onCodeTrack)') < s.index('requestSubscriptionRefresh(force = false)',s.index('if (code.isNotBlank() && onCodeTrack)')) < s.index('val vpnRequest = startClashService()')
 print('PASS: Android integration guards (stopped checks, foreground wake, pre-download revision, original credential, rejection classification, underlying network, renewal entry, startup authority)')
 if '--kotlin' in sys.argv:
     with tempfile.TemporaryDirectory(prefix='sxy-recovery-policy-') as tmp:

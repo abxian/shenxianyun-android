@@ -87,7 +87,9 @@ jobs:
       - name: Verify service traffic accounting
         run: |
           python3 scripts/test-service-traffic.py
-          ./gradlew --no-daemon service:testMetaDebugUnitTest
+          python3 scripts/test-access-recovery.py
+          python3 scripts/test-startup-refresh.py
+          ./gradlew --no-daemon app:testMetaDebugUnitTest service:testMetaDebugUnitTest
 
       - name: Build signed Meta Release APK
         run: ./gradlew --no-daemon app:assembleMetaRelease

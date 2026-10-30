@@ -9,6 +9,7 @@ plugins {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     compileOnly(project(":hideapi"))
 
     implementation(project(":core"))

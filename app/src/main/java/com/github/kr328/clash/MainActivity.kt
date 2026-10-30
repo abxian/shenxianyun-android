@@ -31,6 +31,8 @@ import com.github.kr328.clash.util.withClash
 import com.github.kr328.clash.util.withProfile
 import com.github.kr328.clash.core.bridge.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -62,6 +64,10 @@ class MainActivity : BaseActivity<MainDesign>() {
     private var subscriptionCheckNotBefore = 0L
     private var powerOperationInFlight = false
     private var hadRunningTunnel = false
+    private var subscriptionRefreshJob: Deferred<Boolean>? = null
+    private var subscriptionRefreshCode = ""
+    private var lastAccessCheckCode = ""
+    private var lastAccessCheckAt = 0L
 
     private data class TrafficTotals(val upload: Long, val download: Long) {
         operator fun minus(other: TrafficTotals) = TrafficTotals(
@@ -99,7 +105,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         const val EXPIRED_NODE_NAME = "提取码到期，请续费使用"
         const val EXPIRED_PROFILE_NAME = "提取码已到期"
 
-        // 0=尚未尝试，1=正在刷新，2=本进程已经尝试。Activity 因配置变化重建时不重复下载。
+        // 2 means a download succeeded; foreground opens still force a fresh download.
         val startupSubscriptionRefreshState = AtomicInteger(0)
     }
 
@@ -131,40 +137,18 @@ class MainActivity : BaseActivity<MainDesign>() {
         val design = MainDesign(this)
         stableClientId()
 
-
-        // 端点发现：后台拉取 endpoints.json 并探测可用 API 基址（失败静默，用缓存/内置默认）。
-        // 必须放独立协程，绝不能阻塞下面的 select 事件循环。
-        launch {
-            try {
-                try {
-                    EndpointResolver.initialize()
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                }
-                try {
-                    refreshLineStatus(design)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                }
-                design.refreshSubscriptionOnProcessStart()
-            } finally {
-                // Startup and periodic refresh share the same subscription mutex.
-            }
-        }
-
         setContentDesign(design)
-        configureServiceTrafficReporting()
-
-        runCatching { ensureDefaultMetaFeatures() }
-            .onFailure { design.showExceptionToast(it.asException()) }
-
-        runCatching { design.resetModeForLaunch() }
-            .onFailure { design.showExceptionToast(it.asException()) }
-        runCatching { design.fetch() }
-            .onFailure { design.showExceptionToast(it.asException()) }
-        runCatching { design.checkAppUpdate() }
+        launch { configureServiceTrafficReporting() }
+        // Enter the request loop immediately; service binding and discovery must
+        // never hold every click behind their network/startup waits.
+        launch {
+            try { ensureDefaultMetaFeatures() } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            try { design.resetModeForLaunch() } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            design.safeFetch()
+        }
+        launch { runCatching { design.checkAppUpdate() } }
+        launch { runCatching { EndpointResolver.initialize(); refreshLineStatus(design) } }
+        design.requestSubscriptionRefresh(force = true)
 
         val ticker = ticker(TimeUnit.SECONDS.toMillis(1))
         var lastSubscriptionUpdateCheck = 0L
@@ -185,7 +169,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                             launch { design.safeFetch() }
                             // Returning from payment must not wait for the periodic timer.
                             lastSubscriptionUpdateCheck = 0L
-                            launch { design.refreshSubscriptionOnProcessStart() }
+                            design.requestSubscriptionRefresh(force = true)
                         }
                         Event.ServiceRecreated,
                         Event.ProfileLoaded, Event.ProfileChanged -> launch { design.safeFetch() }
@@ -247,11 +231,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                             if (code.isBlank()) {
                                 design.showCodeImportDialog()
                             } else {
-                                // 网络更新放进独立协程，避免阻塞事件循环导致点击失效。
-                                launch {
-                                    runCatching { design.importSubscriptionCode(code, silent = true) }
-                                        .onFailure { design.showExceptionToast(it.asException()) }
-                                }
+                                design.requestSubscriptionRefresh(force = true)
                             }
                         }
                         MainDesign.Request.RenewCode ->
@@ -300,7 +280,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                     }
                     // VPN停止也继续检查；不修改用户连接意图。
                     if ((clashRunning || activityStarted) &&
-                        !powerOperationInFlight && !subscriptionRefreshMutex.isLocked &&
+                        !powerOperationInFlight && subscriptionRefreshJob?.isActive != true && !subscriptionRefreshMutex.isLocked &&
                         !subscriptionUpdateInFlight &&
                         now - lastSubscriptionUpdateCheck >= subscriptionCheckDelay
                     ) {
@@ -528,7 +508,8 @@ class MainActivity : BaseActivity<MainDesign>() {
     // fetch 的安全包装：吞掉异常并提示，供事件循环用 launch 调用，确保单次刷新失败
     // 不会让协程崩溃或阻塞后续事件处理。
     private suspend fun MainDesign.safeFetch() {
-        runCatching { fetch() }.onFailure { showExceptionToast(it.asException()) }
+        try { fetch() } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* Local service refresh does not open technical error layers. */ }
     }
 
     private suspend fun MainDesign.fetch() {
@@ -660,26 +641,43 @@ class MainActivity : BaseActivity<MainDesign>() {
             .show()
     }
 
-    private suspend fun MainDesign.refreshSubscriptionOnProcessStart() {
+    private fun MainDesign.requestSubscriptionRefresh(
+        force: Boolean,
+    ): Deferred<Boolean>? {
         val code = savedActivationCode()
-        if (code.isBlank() || !startupSubscriptionRefreshState.compareAndSet(0, 1)) {
-            return
+        if (code.isBlank()) return null
+        val existing = subscriptionRefreshJob
+        if (existing?.isActive == true && subscriptionRefreshCode == code) {
+            return existing
         }
-
-        try {
-            checkSubscriptionUpdate()
-        } catch (error: CancellationException) { throw error
-        } catch (_: Exception) {
-            // Keep the restriction/old configuration and let the monitor retry.
-        } finally {
-            if (startupSubscriptionRefreshState.get() == 1) startupSubscriptionRefreshState.set(0)
-        }
+        subscriptionRefreshCode = code
+        return async {
+            setSubscriptionStatus("正在更新订阅，获取最新节点...", true)
+            try {
+                checkSubscriptionUpdate(forceDownload = force)
+                if (savedActivationCode() != code) return@async false
+                setSubscriptionStatus("节点已更新", false)
+                true
+            } catch (error: CancellationException) {
+                if (error !is kotlinx.coroutines.TimeoutCancellationException) throw error
+                if (savedActivationCode() == code)
+                    setSubscriptionStatus("暂未更新，已保留原节点，请稍后重试", false)
+                false
+            } catch (_: Exception) {
+                if (savedActivationCode() == code)
+                    setSubscriptionStatus("暂未更新，已保留原节点，请稍后重试", false)
+                false
+            } finally {
+                if (subscriptionRefreshCode == code) setSubscriptionUpdating(false)
+            }
+        }.also { subscriptionRefreshJob = it }
     }
 
     private suspend fun MainDesign.importSubscriptionCode(
         code: String,
         silent: Boolean = false,
         notifySuccess: Boolean = true,
+        knownState: SubscriptionUpdateState? = null,
     ): Boolean = subscriptionRefreshMutex.withLock {
         // A queued refresh must not restore the code that the user has just replaced.
         if (silent && savedActivationCode() != code) return@withLock false
@@ -742,9 +740,8 @@ class MainActivity : BaseActivity<MainDesign>() {
             }
             // Snapshot the revision BEFORE downloading. A newer update arriving
             // during download must remain detectable on the next poll.
-            val updateState = queryUpdateState(code)
+            val updateState = knownState ?: queryUpdateState(code)
             val content = fetchManagedSubscription(credentials)
-            if (silent && savedActivationCode() != code) return@withLock false
             if (silent && savedActivationCode() != code) return@withLock false
             val expiresAt = updateState.expiresAt.orEmpty()
             if (expiresAt != credentials.expiresAt) {
@@ -772,7 +769,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             editor.apply()
             configureServiceTrafficReporting()
             startupSubscriptionRefreshState.set(2)
-            fetch()
+            launch { safeFetch() }
             if (notifySuccess) {
                 showToast(
                     if (silent) R.string.subscription_updated else R.string.import_code_success,
@@ -801,19 +798,19 @@ class MainActivity : BaseActivity<MainDesign>() {
         val onCodeTrack = active != null &&
             (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
         if (code.isNotBlank() && onCodeTrack) {
-            // Always ask the authority even if the cached expiry is in the past.
-            try {
-                checkSubscriptionUpdate()
-            } catch (error: AccessStateRejected) {
-                showExpiredDialog()
+            // Opening the app already owns one refresh. Share it instead of
+            // queuing another status request + download before the first start.
+            if (!canReuseAccessCheck(
+                    lastAccessCheckCode, code,
+                    android.os.SystemClock.elapsedRealtime() - lastAccessCheckAt,
+                )) {
+                val refresh = requestSubscriptionRefresh(force = false)
+                if (refresh != null) withTimeoutOrNull(1_500) { refresh.await() }
+            }
+            if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
+                !isActivationStillValid(code) || onExpiredPlaceholder()) {
+                setSubscriptionStatus("请确认提取码有效并联网更新后重试", false)
                 return
-            } catch (error: CancellationException) { throw error
-            } catch (_: Exception) {
-                if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
-                    !isActivationStillValid(code) || onExpiredPlaceholder()) {
-                    showToast("尚未确认提取码恢复，请联网后重试", ToastDuration.Long)
-                    return
-                }
             }
             active = withProfile { queryActive() }
         }
@@ -958,17 +955,18 @@ class MainActivity : BaseActivity<MainDesign>() {
     }
 
     // A lightweight authoritative status read is independent of VPN state.
-    private suspend fun MainDesign.checkSubscriptionUpdate() {
+    private suspend fun MainDesign.checkSubscriptionUpdate(forceDownload: Boolean = false) {
         accessStateMutex.withLock {
         if (System.currentTimeMillis() < subscriptionCheckNotBefore) throw IllegalStateException("服务端要求稍后检查")
         val code = savedActivationCode()
         if (code.isBlank()) return
-        val active = withProfile { queryActive() } ?: return
-        if (active.uuid != managedProfileUuid() && active.uuid != expiredProfileUuid()) return
+        val active = withProfile { queryActive() } ?: throw IllegalStateException("尚未选择提取码订阅")
+        if (active.uuid != managedProfileUuid() && active.uuid != expiredProfileUuid())
+            throw IllegalStateException("当前使用本地配置")
         val store = activationStore()
         val wasRestricted = store.getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() || onExpiredPlaceholder()
         val oldExpiry = store.getString(KEY_EXPIRES_AT, "").orEmpty()
-        val state = try { queryUpdateState(code) } catch (error: ManagedStateRetryAfter) {
+        val state = try { withTimeout(10_000) { queryUpdateState(code) } } catch (error: ManagedStateRetryAfter) {
             subscriptionCheckNotBefore = System.currentTimeMillis() + error.delayMillis
             throw error
         } catch (error: AccessStateRejected) {
@@ -979,15 +977,17 @@ class MainActivity : BaseActivity<MainDesign>() {
             throw error
         }
         if (savedActivationCode() != code) return
+        lastAccessCheckCode = code
+        lastAccessCheckAt = android.os.SystemClock.elapsedRealtime()
         val expiryChanged = normalizedExpiresAt(oldExpiry) != state.expiresAt
         val needsRefresh = shouldRefreshAccessSubscription(
-            startup = startupSubscriptionRefreshState.get() != 2,
+            startup = forceDownload || startupSubscriptionRefreshState.get() != 2,
             restricted = wasRestricted, expiryChanged = expiryChanged,
             localVersion = store.getLong(KEY_UPDATE_VERSION, 0L), remoteVersion = state.updateVersion ?: 0L,
             localRevision = store.getString(KEY_SUBSCRIPTION_REVISION, ""), remoteRevision = state.revision,
         )
         if (needsRefresh) {
-            if (!importSubscriptionCode(code, silent = true, notifySuccess = false)) {
+            if (!importSubscriptionCode(code, silent = true, notifySuccess = false, knownState = state)) {
                 throw IllegalStateException("恢复订阅暂未完成，将自动重试")
             }
         }
