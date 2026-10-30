@@ -114,7 +114,7 @@ object ServiceTrafficAccounting {
                 }
                 val success=result.kind in listOf("accepted","accepted_limit","reset")
                 failures=if(success)0 else (failures+1).coerceAtMost(7)
-                val delay=if(success)30_000L else (15_000L shl (failures-1).coerceAtLeast(0)).coerceAtMost(1_800_000L)
+                val delay=if(success)(30_000L+(Math.random()*5_000L).toLong()) else (15_000L shl (failures-1).coerceAtLeast(0)).coerceAtMost(1_800_000L)
                 nextAttempt=android.os.SystemClock.elapsedRealtime()+maxOf(delay,result.retryAfter)
                 persist(service)
             }
@@ -151,6 +151,8 @@ object ServiceTrafficAccounting {
     suspend fun finish(service: Service) {
         // Persist before the core reset even if the network is unavailable. A
         // frozen uncertain HTTP request is retried with the same id/sequence.
+        Clash.suspendCore(true)
+        Clash.stopAccountingTraffic()
         sample(service)
         withTimeoutOrNull(11_000L) {report(service,true)}
     }

@@ -544,3 +544,8 @@ Java_com_github_kr328_clash_core_bridge_Bridge_nativeCoreVersion(JNIEnv *env, jo
 
     return new_string(Version);
 }
+
+JNIEXPORT void JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeStopAccountingTraffic(JNIEnv *env, jobject thiz) {
+    stopAccountingTraffic();
+}
