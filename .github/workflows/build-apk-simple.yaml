@@ -79,6 +79,11 @@ jobs:
             echo "Signing secrets are not configured. APK will use debug signing."
           fi
 
+      - name: Traffic accounting unit and lifecycle checks
+        run: |
+          python3 scripts/test-service-traffic.py
+          ./gradlew --no-daemon service:testMetaDebugUnitTest
+
       - name: Build APK
         run: ./gradlew --no-daemon app:assembleMetaRelease
 

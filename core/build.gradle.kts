@@ -56,9 +56,16 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
 }
 
+val prepareProxyAccountingCore by tasks.registering(Exec::class) {
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "scripts/prepare-proxy-core.py")
+    inputs.file(rootProject.file("scripts/proxy-traffic.patch"))
+}
+
 afterEvaluate {
     tasks.withType(GolangBuildTask::class.java).forEach {
         it.inputs.dir(golangSource)
+        it.dependsOn(prepareProxyAccountingCore)
     }
 }
 

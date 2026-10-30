@@ -8,6 +8,7 @@ import (
 
 	"cfa/native/app"
 	"cfa/native/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 //export queryTunnelState
@@ -27,6 +28,13 @@ func queryNow(upload, download *C.uint64_t) {
 
 	*upload = C.uint64_t(up)
 	*download = C.uint64_t(down)
+}
+
+//export queryProxyTotal
+func queryProxyTotal(upload, download *C.uint64_t) {
+	snapshot := statistic.DefaultManager.Snapshot()
+	*upload = C.uint64_t(snapshot.ProxyUploadTotal)
+	*download = C.uint64_t(snapshot.ProxyDownloadTotal)
 }
 
 //export queryTotal
