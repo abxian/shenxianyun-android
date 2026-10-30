@@ -496,7 +496,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
-    private fun configureServiceTrafficReporting() {
+    private suspend fun configureServiceTrafficReporting() {
         val code=savedActivationCode()
         val credentials=loadManagedCredentials()?.takeIf {it.accessCode==code} ?: return
         val profile=activationStore().getString(KEY_PROFILE_UUID,null) ?: return
