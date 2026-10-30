@@ -6,6 +6,7 @@ assert 'sendClientTraffic(' not in app and 'nextTrafficReportAt' not in app
 assert app.count('configureServiceTrafficReporting()')>=4
 for name in ['TunService.kt','ClashService.kt']:
  s=(r/'service/src/main/java/com/github/kr328/clash/service'/name).read_text()
+ assert s.count('ServiceTrafficAccounting.begin(self)')==1
  assert 'ServiceTrafficAccounting.begin(self)' in s and 'install(TrafficReportingModule(self))' in s
  assert s.index('ServiceTrafficAccounting.finish(self)')<s.index('stopSelf()',s.index('finally'))
 s=(r/'service/src/main/java/com/github/kr328/clash/service/clash/module/ConfigurationModule.kt').read_text()

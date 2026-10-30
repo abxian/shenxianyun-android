@@ -133,7 +133,6 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
     }
 
     private fun TunModule.open() {
-        com.github.kr328.clash.service.traffic.ServiceTrafficAccounting.begin(self)
         val store = ServiceStore(self)
 
         val device = with(Builder()) {
