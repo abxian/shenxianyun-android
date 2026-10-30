@@ -76,7 +76,7 @@ private fun Context.legacyManagedSecretKey(): SecretKey {
                     MANAGED_WRAPPED_KEY,
                     Base64.encodeToString(cipher.doFinal(generated), Base64.NO_WRAP),
                 )
-                .apply()
+                .commit()
         }
     } else {
         cipher.init(Cipher.DECRYPT_MODE, keyStore.getKey(MANAGED_RSA_ALIAS, null))
