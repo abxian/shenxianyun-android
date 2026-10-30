@@ -82,7 +82,9 @@ jobs:
       - name: Traffic accounting unit and lifecycle checks
         run: |
           python3 scripts/test-service-traffic.py
-          ./gradlew --no-daemon service:testMetaDebugUnitTest
+          python3 scripts/test-access-recovery.py
+          python3 scripts/test-startup-refresh.py
+          ./gradlew --no-daemon app:testMetaDebugUnitTest service:testMetaDebugUnitTest
 
       - name: Build APK
         run: ./gradlew --no-daemon app:assembleMetaRelease

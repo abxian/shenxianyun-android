@@ -66,13 +66,6 @@ jobs:
       #     echo "cat signing.properties"
       #     cat signing.properties
 
-      - name: Verify startup and service recovery
-        run: |
-          python3 scripts/test-access-recovery.py
-          python3 scripts/test-startup-refresh.py
-          python3 scripts/test-service-traffic.py
-          ./gradlew --no-daemon app:testMetaDebugUnitTest service:testMetaDebugUnitTest
-
       - name: Build
         if: success()
         run: ./gradlew --no-daemon app:assembleAlphaRelease
