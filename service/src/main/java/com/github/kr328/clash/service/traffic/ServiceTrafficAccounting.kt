@@ -26,6 +26,7 @@ object ServiceTrafficAccounting {
     private var run=""
     private var profile: String?=null
     private var current: LedgerCounter?=null
+    private var lastRaw=ByteTotals()
     private var nextAttempt=0L
     private var failures=0
     private var reportCursor=0
@@ -60,7 +61,7 @@ object ServiceTrafficAccounting {
         TrafficSecureStore.write(context,STATE,JSONObject().put("counters",array).toString())
     }
     suspend fun begin(context: Context)=lock.withLock {
-        initialize(context);run=UUID.randomUUID().toString();profile=null;current=null;nextAttempt=0L;failures=0
+        initialize(context);run=UUID.randomUUID().toString();profile=null;current=null;lastRaw=ByteTotals();nextAttempt=0L;failures=0
     }
     suspend fun profileLoaded(context: Context,uuid: String)=lock.withLock {
         initialize(context);profile=uuid
@@ -84,9 +85,10 @@ object ServiceTrafficAccounting {
         if(prior!=null && prior.run==run && billable && prior.scope==scope && !regressed) {
             counters.filter {it.scope==scope}.forEach {it.configuration=config!!.toString()}
         } else if(billable) {
-            val firstInRun=counters.none {it.run==run} || regressed
-            current=LedgerCounter(UUID.randomUUID().toString(),run,scope!!,config.toString(),raw,if(firstInRun)raw else ByteTotals()).also {counters.add(it)}
+            val initial=if(raw.regressedFrom(lastRaw))raw else raw-lastRaw
+            current=LedgerCounter(UUID.randomUUID().toString(),run,scope!!,config.toString(),raw,initial).also {counters.add(it)}
         } else if(!priorOnProfile)current=null
+        lastRaw=raw
         counters.removeAll {it!==current && it.pending==null && (it.total-it.acknowledged).isEmpty()}
         persist(context)
     }
