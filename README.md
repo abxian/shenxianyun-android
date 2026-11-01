@@ -303,3 +303,8 @@ curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
 3. 等 Action 跑完 → 下载 artifact `shenxianyun-android-apk` 并解压。
 4. （如需正式签名）用 `shenxianyun-keys` 里的 keystore 签名。
 5. 重命名为 `神仙云.apk` / `shenxianyunall.apk` → `curl -T` 上传到 dufs。
+
+
+## 神仙云 Android 2.11.55 / 211055
+
+正式源码基于已通过完整 APK 与单元测试的管理备用修复，仅递增版本和发行说明。详见 [RELEASE_2.11.55](docs/RELEASE_2.11.55.md)。正式构建、签名验包、下载入口切换与真机验收分别记录，未完成不得当作已分发。
