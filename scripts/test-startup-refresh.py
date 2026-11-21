@@ -21,7 +21,7 @@ assert 'shouldReuseSubscriptionRefresh(subscriptionRefreshCode, code, existing?.
 assert 'setSubscriptionStatus("正在更新配置' in refresh
 assert 'else "配置更新失败，已保留原配置' in refresh
 assert 'knownState = state' in a and 'val updateState = knownState ?: queryUpdateState(code)' in a
-start=a[a.index('private suspend fun MainDesign.startClash()'):a.index('val vpnRequest = startClashService()')]
+start=a[a.index('private suspend fun MainDesign.startClash('):a.index('val vpnRequest = startClashService()')]
 assert 'requestSubscriptionRefresh(force = true)' in start and 'awaitStartupRefresh(it)' in start
 assert 'withTimeoutOrNull(1_500)' not in start and 'KEY_ACCESS_RESTRICTION' in start
 returned=a[a.index('Event.ActivityStart ->'):a.index('Event.ServiceRecreated,')]
@@ -36,3 +36,16 @@ assert '配置正在后台更新' in start
 assert 'binding.starting = value' in d and '@string/main_processing' in l
 assert '智能加速' not in l and '稳定连接' not in l
 print('328 bounded startup wait, failure stop and visible busy-state integration passed')
+
+# The first code is entered in the shared dialog; successful import starts the
+# already validated profile without a second immediate subscription download.
+dialog = a[a.index('private fun MainDesign.showCodeImportDialog()'):a.index('private fun MainDesign.showExpiredDialog()')]
+assert 'access_code_input' not in l
+assert 'activationCode == null ? @string/import_code_title : @string/switch_import_code' in l
+assert 'if (savedActivationCode().isBlank()) design.showCodeImportDialog()' in a
+assert 'if (importSubscriptionCode(code, onStatus = { status.text = it }))' in dialog
+assert 'if (firstImport) startClash(refreshManagedProfile = false)' in dialog
+assert 'refreshManagedProfile: Boolean = true' in start and 'if (refreshManagedProfile)' in start
+assert '!isActivationStillValid(code)' in start and '!active.imported' in start
+assert 'EditorInfo.IME_ACTION_DONE' in dialog and 'confirm.performClick()' in dialog
+print('456 first-import button, dialog submission and startup checks passed')

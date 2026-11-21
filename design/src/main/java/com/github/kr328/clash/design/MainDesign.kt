@@ -43,8 +43,6 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     override val root: View
         get() = binding.root
 
-    fun enteredAccessCode(): String = binding.accessCodeInput.text.toString().trim()
-
     suspend fun setSubscriptionStatus(text: String, updating: Boolean) = withContext(Dispatchers.Main) {
         binding.subscriptionStatus = text
         binding.subscriptionUpdating = updating
@@ -58,7 +56,7 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         starting = value
         binding.starting = value
         binding.powerButton.isEnabled = !value
-        binding.accessCodeInput.isEnabled = !value
+        binding.switchCodeButton.isEnabled = !value
     }
 
     suspend fun setProfileName(name: String?) {
@@ -264,12 +262,6 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
     }
 
     init {
-        binding.accessCodeInput.setOnEditorActionListener { _, action, _ ->
-            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
-                request(Request.ToggleStatus)
-                true
-            } else false
-        }
         binding.self = this
 
         binding.colorClashStarted = context.resolveThemedColor(com.google.android.material.R.attr.colorPrimary)

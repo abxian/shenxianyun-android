@@ -107,26 +107,6 @@
                     android:textColor="@color/sxy_purple"
                     android:visibility="@{!clashRunning || lineStatus == null ? View.GONE : View.VISIBLE}" />
 
-                <EditText
-                    android:id="@+id/access_code_input"
-                    android:background="@drawable/bg_sxy_code_input"
-                    android:backgroundTint="@null"
-                    android:paddingHorizontal="18dp"
-                    android:paddingVertical="14dp"
-                    android:minHeight="56dp"
-                    android:textColor="@color/sxy_text_soft"
-                    android:textColorHint="@color/sxy_text_muted"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="24dp"
-                    android:layout_marginVertical="16dp"
-                    android:hint="@string/import_code_hint"
-                    android:inputType="textVisiblePassword"
-                    android:maxLines="1"
-                    android:singleLine="true"
-                    android:imeOptions="actionGo"
-                    android:visibility="@{!clashRunning &amp;&amp; activationCode == null ? View.VISIBLE : View.GONE}" />
-
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/switch_code_button"
                     android:layout_width="match_parent"
@@ -143,8 +123,8 @@
                     android:background="@drawable/bg_sxy_switch_code"
                     android:elevation="2dp"
                     android:onClick="@{() -> self.request(Request.ImportByCode)}"
-                    android:visibility="@{!clashRunning &amp;&amp; activationCode != null ? View.VISIBLE : View.GONE}"
-                    android:text="@string/switch_import_code"
+                    android:visibility="@{clashRunning ? View.GONE : View.VISIBLE}"
+                    android:text="@{activationCode == null ? @string/import_code_title : @string/switch_import_code}"
                     android:textAllCaps="false"
                     android:textColor="@color/sxy_text_soft"
                     android:textSize="16sp"

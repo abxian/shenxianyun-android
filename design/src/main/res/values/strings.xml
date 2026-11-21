@@ -406,6 +406,8 @@
     <string name="activation_expiry_pending">Expiry: awaiting sync</string>
     <string name="main_processing">Working…</string>
     <string name="import_code_confirm">Import</string>
-    <string name="import_code_guidance">Enter your code. Its status will appear here.</string>
+    <string name="import_code_and_start">Import and start</string>
+    <string name="import_code_too_long">Enter a code with at most 128 characters.</string>
+    <string name="import_code_guidance">Your code will be verified before the configuration is imported.</string>
     <string name="app_update_changes">What is new</string>
 </resources>

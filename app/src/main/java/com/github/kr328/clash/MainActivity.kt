@@ -7,12 +7,20 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PersistableBundle
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.isVisible
 import com.github.kr328.clash.common.compat.versionCodeCompat
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.core.Clash
@@ -62,6 +70,7 @@ class MainActivity : BaseActivity<MainDesign>() {
     private val accessStateMutex = Mutex()
     private var subscriptionCheckNotBefore = 0L
     private var powerOperationInFlight = false
+    private var codeImportDialog: AlertDialog? = null
     private var hadRunningTunnel = false
     private var subscriptionRefreshJob: Deferred<Boolean>? = null
     private var subscriptionRefreshCode = ""
@@ -201,16 +210,8 @@ class MainActivity : BaseActivity<MainDesign>() {
                                     design.setStarting(true)
                                     try {
                                         if (clashRunning) stopClashService()
-                                        else {
-                                            val entered = design.enteredAccessCode()
-                                            if (savedActivationCode().isBlank()) {
-                                                if (entered.isBlank()) {
-                                                    design.setSubscriptionStatus(getString(R.string.import_code_empty), false)
-                                                } else if (design.importSubscriptionCode(entered)) {
-                                                    design.startClash()
-                                                }
-                                            } else design.startClash()
-                                        }
+                                        else if (savedActivationCode().isBlank()) design.showCodeImportDialog()
+                                        else design.startClash()
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
@@ -585,42 +586,90 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
+    override fun onDestroy() {
+        codeImportDialog?.dismiss()
+        super.onDestroy()
+    }
+
     private fun MainDesign.showCodeImportDialog() {
+        if (codeImportDialog?.isShowing == true) return
+        val savedCode = savedActivationCode()
+        val firstImport = savedCode.isBlank()
         val content = layoutInflater.inflate(R.layout.dialog_code_import, null)
         val input = content.findViewById<EditText>(R.id.code_dialog_input)
-        val status = content.findViewById<android.widget.TextView>(R.id.code_dialog_status)
-        input.setText(savedActivationCode())
+        val status = content.findViewById<TextView>(R.id.code_dialog_status)
+        val progress = content.findViewById<ProgressBar>(R.id.code_dialog_progress)
+        val confirm = content.findViewById<TextView>(R.id.code_dialog_confirm)
+        val cancel = content.findViewById<TextView>(R.id.code_dialog_cancel)
+        content.findViewById<TextView>(R.id.code_dialog_title).setText(
+            if (firstImport) R.string.import_code_title else R.string.switch_import_code
+        )
+        confirm.setText(if (firstImport) R.string.import_code_and_start else R.string.import_code_confirm)
+        input.setText(savedCode)
         input.selectAll()
-        val dialog = AlertDialog.Builder(this@MainActivity)
-            .setView(content)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.import_code_confirm, null)
-            .create()
+        val dialog = AlertDialog.Builder(this@MainActivity).setView(content).create()
+        codeImportDialog = dialog
+        dialog.setOnDismissListener { codeImportDialog = null }
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(
-                ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_sxy_code_dialog)
-            )
-            val confirm = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            confirm.setOnClickListener {
-                val code = input.text.toString().trim()
-                if (code.isBlank()) {
-                    status.setText(R.string.import_code_empty)
-                    input.requestFocus()
-                    return@setOnClickListener
-                }
-                confirm.isEnabled = false
-                input.isEnabled = false
-                launch {
-                    try {
-                        val imported = importSubscriptionCode(code, onStatus = { status.text = it })
-                        // A failed import leaves the input and explanation visible.
-                        if (imported) dialog.dismiss()
-                    } finally {
-                        confirm.isEnabled = true
-                        input.isEnabled = true
+            dialog.window?.apply {
+                setBackgroundDrawableResource(android.R.color.transparent)
+                setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            input.requestFocus()
+            content.alpha = 0f
+            content.translationY = 14 * resources.displayMetrics.density
+            content.animate().alpha(1f).translationY(0f).setDuration(240L)
+                .setInterpolator(DecelerateInterpolator()).start()
+        }
+        cancel.setOnClickListener { dialog.dismiss() }
+        confirm.setOnClickListener {
+            val code = input.text.toString().trim()
+            if (code.isBlank() || code.length > 128) {
+                status.setText(if (code.isBlank()) R.string.import_code_empty else R.string.import_code_too_long)
+                input.requestFocus()
+                return@setOnClickListener
+            }
+            dialog.window?.let { WindowInsetsControllerCompat(it, input).hide(WindowInsetsCompat.Type.ime()) }
+            confirm.isEnabled = false
+            cancel.isEnabled = false
+            input.isEnabled = false
+            progress.isVisible = true
+            dialog.setCancelable(false)
+            launch {
+                var startingAfterImport = false
+                try {
+                    if (importSubscriptionCode(code, onStatus = { status.text = it })) {
+                        if (firstImport) {
+                            // Avoid a second download immediately after a successful first import.
+                            startingAfterImport = true
+                            powerOperationInFlight = true
+                            setStarting(true)
+                        }
+                        dialog.dismiss()
+                        if (firstImport) startClash(refreshManagedProfile = false)
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    showExceptionToast(e)
+                } finally {
+                    if (startingAfterImport) {
+                        powerOperationInFlight = false
+                        setStarting(false)
+                    }
+                    confirm.isEnabled = true
+                    cancel.isEnabled = true
+                    input.isEnabled = true
+                    progress.isVisible = false
+                    dialog.setCancelable(true)
                 }
             }
+        }
+        input.setOnEditorActionListener { _, action, _ ->
+            if (action != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
+            if (confirm.isEnabled) confirm.performClick()
+            true
         }
         dialog.show()
     }
@@ -699,6 +748,7 @@ class MainActivity : BaseActivity<MainDesign>() {
     ): Boolean = subscriptionRefreshMutex.withLock {
         // A queued refresh must not restore the code that the user has just replaced.
         if (silent && savedActivationCode() != code) return@withLock false
+        var stage = CodeImportStage.Verify
         try {
             if (!silent) {
                 setSubscriptionStatus("正在验证提取码…", true)
@@ -708,6 +758,8 @@ class MainActivity : BaseActivity<MainDesign>() {
             // codes must not collapse into the legacy ticket endpoint's 403.
             // Snapshot revision before download; do not consume a newer revision later.
             val updateState = knownState ?: queryUpdateState(code)
+            stage = CodeImportStage.Authorize
+            if (!silent) onStatus?.invoke("提取码已验证，正在验证设备…")
 
             val activeUuidBefore = withProfile { queryActive()?.uuid }
             val managedUuidBefore = managedProfileUuid()
@@ -764,7 +816,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                 setSubscriptionStatus("提取码有效，正在获取配置…", true)
                 onStatus?.invoke("提取码有效，正在获取配置…")
             }
+            stage = CodeImportStage.Download
             val content = withTimeout(20_000) { fetchManagedSubscription(credentials) }
+            stage = CodeImportStage.Install
+            if (!silent) onStatus?.invoke("正在校验并安装配置…")
             if (silent && savedActivationCode() != code) return@withLock false
             val expiresAt = updateState.expiresAt.orEmpty()
             if (expiresAt != credentials.expiresAt) {
@@ -775,6 +830,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 activeUuidBefore == managedUuidBefore ||
                 activeUuidBefore == expiredUuidBefore
             val uuid = installManagedProfile(code, content, activate = shouldActivate)
+            stage = CodeImportStage.Save
             saveManagedCredentials(credentials)
             val updateVersion = updateState.updateVersion
                 ?: activationStore().getLong(KEY_UPDATE_VERSION, 0L)
@@ -803,7 +859,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         } catch (e: CancellationException) {
             if (e !is kotlinx.coroutines.TimeoutCancellationException) throw e
             if (!silent) {
-                val message = codeImportFailureMessage(networkFailure = true)
+                val message = codeImportFailureMessage(networkFailure = true, stage = stage)
                 setSubscriptionStatus(message, false)
                 onStatus?.invoke(message)
             }
@@ -814,9 +870,12 @@ class MainActivity : BaseActivity<MainDesign>() {
                     is AccessStateRejected -> e.reason
                     is ManagedImportRejected -> e.reason
                     is ManagedStateRetryAfter -> "busy"
+                    is ManagedSubscriptionUnauthorized -> "credential_rejected"
                     else -> null
                 }
-                val message = codeImportFailureMessage(reason, e is java.io.IOException)
+                val networkFailure = e is java.io.IOException &&
+                    stage != CodeImportStage.Install && stage != CodeImportStage.Save
+                val message = codeImportFailureMessage(reason, networkFailure, stage)
                 setSubscriptionStatus(message, false)
                 onStatus?.invoke(message)
             }
@@ -824,7 +883,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
-    private suspend fun MainDesign.startClash() {
+    private suspend fun MainDesign.startClash(refreshManagedProfile: Boolean = true) {
         val code = savedActivationCode()
         var active = withProfile { queryActive() }
         // 到期占位只在“当前正使用提取码那条订阅（或已是到期占位）”时才触发：切到只含一个
@@ -835,17 +894,13 @@ class MainActivity : BaseActivity<MainDesign>() {
         val onCodeTrack = active != null &&
             (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
         if (code.isNotBlank() && onCodeTrack) {
-            // Every Start requests current nodes. Share an in-flight same-code
-            // refresh, but a previously completed check never skips this update.
-            val refresh = requestSubscriptionRefresh(force = true)
-            when (refresh?.let { awaitStartupRefresh(it) }) {
-                null -> {
-                    // Keep the same refresh in the background; only an existing,
-                    // still-valid managed profile may start after the UI wait expires.
-                    setSubscriptionStatus("配置正在后台更新", true)
+            if (refreshManagedProfile) {
+                val refresh = requestSubscriptionRefresh(force = true)
+                when (refresh?.let { awaitStartupRefresh(it) }) {
+                    null -> setSubscriptionStatus("配置正在后台更新", true)
+                    false -> return
+                    true -> Unit
                 }
-                false -> return
-                true -> Unit
             }
             if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
                 !isActivationStillValid(code) || onExpiredPlaceholder()) {

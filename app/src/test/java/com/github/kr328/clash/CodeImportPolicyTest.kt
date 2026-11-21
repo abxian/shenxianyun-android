@@ -36,4 +36,12 @@ class CodeImportPolicyTest {
         assertTrue(codeImportFailureMessage(importRejectionReason(429, "")).contains("服务暂忙"))
         assertTrue(codeImportFailureMessage(importRejectionReason(503, "")).contains("服务暂忙"))
     }
+    @Test fun importStageExplainsFailuresWithoutBlamingAnAcceptedCode() {
+        assertTrue(codeImportFailureMessage(stage = CodeImportStage.Authorize).contains("设备授权失败"))
+        assertTrue(codeImportFailureMessage(stage = CodeImportStage.Install).contains("校验或安装失败"))
+        assertTrue(codeImportFailureMessage(networkFailure = true, stage = CodeImportStage.Download)
+            .contains("下载配置时网络连接失败"))
+        assertTrue(codeImportFailureMessage("bound_limit", stage = CodeImportStage.Authorize)
+            .contains("绑定设备已达上限"))
+    }
 }
