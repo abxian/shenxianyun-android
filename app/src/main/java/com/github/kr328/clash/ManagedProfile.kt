@@ -50,11 +50,16 @@ internal data class ManagedCredentials(
     val limitMode: String,
 )
 
+// The general discovery cache can contain HTTP routes for older clients.
+internal fun secureManagedApiBase(base: String): String =
+    base.trim().trimEnd('/').takeIf { it.startsWith("https://") }
+        ?: EndpointResolver.DEFAULT_API_BASE
+
 internal suspend fun Context.issueManagedImportTicket(
     code: String,
     apiBase: String,
 ): String = withContext(Dispatchers.IO) {
-    val reply = RelayTransport.entry(this@issueManagedImportTicket, apiBase, "ticket",
+    val reply = RelayTransport.entry(this@issueManagedImportTicket, secureManagedApiBase(apiBase), "ticket",
         JSONObject().put("code", code).put("target", "shenxianyun"))
     val json=reply.json
     if(reply.status !in 200..299 || !json.optBoolean("ok"))
@@ -68,12 +73,13 @@ internal suspend fun Context.exchangeManagedImportTicket(
     apiBase: String,
     clientId: String,
 ): ManagedCredentials = withContext(Dispatchers.IO) {
-    val reply=RelayTransport.entry(this@exchangeManagedImportTicket,apiBase,"exchange",
+    val secureBase = secureManagedApiBase(apiBase)
+    val reply=RelayTransport.entry(this@exchangeManagedImportTicket,secureBase,"exchange",
         JSONObject().put("ticket",ticket).put("client_id",clientId).put("platform","android"))
     val json=reply.json
     if(reply.status !in 200..299 || !json.optBoolean("ok") || json.optString("device_token").isBlank() || json.optString("subscription_url").isBlank())
         throw ManagedImportRejected(importRejectionReason(reply.status, json.optString("code")))
-    ManagedCredentials(accessCode=json.optString("name"),apiBase=apiBase.trimEnd('/'),
+    ManagedCredentials(accessCode=json.optString("name"),apiBase=secureBase,
         subscriptionUrl=json.getString("subscription_url"),deviceToken=json.getString("device_token"),
         expiresAt=json.optString("expires_at"),limitMode=json.optString("limit_mode","hybrid"))
 }
@@ -179,7 +185,7 @@ internal fun Context.loadManagedCredentials(): ManagedCredentials? = runCatching
     )
     ManagedCredentials(
         accessCode = json.getString("access_code"),
-        apiBase = json.getString("api_base").trimEnd('/'),
+        apiBase = secureManagedApiBase(json.getString("api_base")),
         subscriptionUrl = json.getString("subscription_url"),
         deviceToken = json.getString("device_token"),
         expiresAt = json.optString("expires_at", ""),
@@ -288,7 +294,7 @@ internal class ManagedStateRetryAfter(val delayMillis: Long) : IllegalStateExcep
 
 /** Status must remain reachable when the active tunnel's nodes are blocked. */
 internal suspend fun Context.readManagedUpdateState(code: String, clientId: String): Pair<Int, JSONObject> = withContext(Dispatchers.IO) {
-    val reply=RelayTransport.entry(this@readManagedUpdateState,EndpointResolver.apiBase(),"state",
+    val reply=RelayTransport.entry(this@readManagedUpdateState,secureManagedApiBase(EndpointResolver.apiBase()),"state",
         JSONObject().put("code",code).put("client_id",clientId))
     if(reply.status==429 || reply.status==503)throw ManagedStateRetryAfter(maxOf(30_000L,reply.retryAfter))
     reply.status to reply.json

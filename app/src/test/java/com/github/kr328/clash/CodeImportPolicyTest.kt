@@ -44,4 +44,8 @@ class CodeImportPolicyTest {
         assertTrue(codeImportFailureMessage("bound_limit", stage = CodeImportStage.Authorize)
             .contains("绑定设备已达上限"))
     }
+    @Test fun managedImportNeverStoresAnHttpDiscoveryRoute() {
+        assertEquals(EndpointResolver.DEFAULT_API_BASE, secureManagedApiBase("http://legacy.example:5010"))
+        assertEquals("https://backup.example:5443", secureManagedApiBase("https://backup.example:5443/"))
+    }
 }

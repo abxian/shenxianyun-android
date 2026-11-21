@@ -49,3 +49,10 @@ assert 'refreshManagedProfile: Boolean = true' in start and 'if (refreshManagedP
 assert '!isActivationStillValid(code)' in start and '!active.imported' in start
 assert 'EditorInfo.IME_ACTION_DONE' in dialog and 'confirm.performClick()' in dialog
 print('456 first-import button, dialog submission and startup checks passed')
+
+managed = (r/'app/src/main/java/com/github/kr328/clash/ManagedProfile.kt').read_text()
+assert 'secureManagedApiBase(apiBase), "ticket"' in managed
+assert 'this@exchangeManagedImportTicket,secureBase,"exchange"' in managed
+assert 'apiBase=secureBase,' in managed
+assert 'apiBase = secureManagedApiBase(json.getString("api_base"))' in managed
+print('456 secure managed API address survives first import and cached credentials')
