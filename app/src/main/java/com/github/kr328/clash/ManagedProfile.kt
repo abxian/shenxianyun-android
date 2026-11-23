@@ -228,9 +228,10 @@ internal suspend fun Context.fetchManagedSubscription(
                 setRequestProperty("Authorization", "Bearer ${credentials.deviceToken}")
                 setRequestProperty("User-Agent", "Shenxianyun-Android/Managed")
             }
-            if (connection.responseCode == 401 || connection.responseCode == 403) throw ManagedSubscriptionUnauthorized()
-            if (connection.responseCode >= 500) throw IOException("subscription origin unavailable")
-            if (connection.responseCode !in 200..299) {
+            val status = connection.responseCode
+            if (status == 401 || status == 403 || status == 404) break
+            if (status >= 500) throw IOException("subscription origin unavailable")
+            if (status !in 200..299) {
                 throw IllegalStateException("受管订阅获取失败，请重新导入提取码")
             }
             return@withContext connection.inputStream.bufferedReader().use { it.readText() }
@@ -240,6 +241,27 @@ internal suspend fun Context.fetchManagedSubscription(
             failure = e
         } finally {
             connection?.disconnect()
+        }
+    }
+    // A superseded subscription URL can fail even when the existing device is still
+    // authorized. The current endpoint checks the same device token and subscription
+    // policy on the server. Never register a device again as part of a refresh.
+    val current = try {
+        RelayTransport.request(
+            this@fetchManagedSubscription,
+            secureManagedApiBase(credentials.apiBase) + "/api/v2/client/subscription",
+            "GET",
+            credentials.deviceToken,
+        )
+    } catch (e: IOException) {
+        null
+    }
+    if (current != null) {
+        if (current.status == 401 || current.status == 403) throw ManagedSubscriptionUnauthorized()
+        if (current.status == 200 && current.json.optBoolean("ok")) {
+            return@withContext current.json.getString("content")
+                .takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("受管订阅内容为空")
         }
     }
     return@withContext try { RelayTransport.subscription(this@fetchManagedSubscription, credentials.deviceToken) }

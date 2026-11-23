@@ -12,6 +12,7 @@ internal fun importRejectionReason(status: Int, code: String): String = when {
 
 internal enum class CodeImportStage(val label: String, val failure: String) {
     Verify("验证提取码", "暂时无法验证提取码，请稍后重试"),
+    Ticket("申请导入票据", "提取码有效，但暂时无法申请导入票据，请稍后重试"),
     Authorize("设备授权", "提取码已通过验证，但设备授权失败，请重试"),
     Download("下载配置", "设备已通过验证，但暂时无法获取配置，请稍后重试"),
     Install("配置校验和安装", "配置已下载，但校验或安装失败，请联系管理员检查订阅配置"),

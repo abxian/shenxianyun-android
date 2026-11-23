@@ -727,9 +727,11 @@ class MainActivity : BaseActivity<MainDesign>() {
                 false
             } catch (error: Exception) {
                 if (savedActivationCode() == code) {
-                    val message = if (error is AccessStateRejected)
-                        codeImportFailureMessage(error.reason)
-                    else "配置更新失败，已保留原配置，请稍后重试"
+                    val message = when (error) {
+                        is AccessStateRejected -> codeImportFailureMessage(error.reason)
+                        is ManagedSubscriptionUnauthorized -> "设备授权已失效，请重新验证提取码；原配置已保留"
+                        else -> "配置更新失败，已保留原配置，请稍后重试"
+                    }
                     setSubscriptionStatus(message, false)
                 }
                 false
@@ -758,7 +760,6 @@ class MainActivity : BaseActivity<MainDesign>() {
             // codes must not collapse into the legacy ticket endpoint's 403.
             // Snapshot revision before download; do not consume a newer revision later.
             val updateState = knownState ?: queryUpdateState(code)
-            stage = CodeImportStage.Authorize
             if (!silent) onStatus?.invoke("提取码已验证，正在验证设备…")
 
             val activeUuidBefore = withProfile { queryActive()?.uuid }
@@ -783,7 +784,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                     }
                     try {
                         val apiBase = EndpointResolver.apiBase()
+                        stage = CodeImportStage.Ticket
                         val ticket = issueManagedImportTicket(code, apiBase)
+                        stage = CodeImportStage.Authorize
                         exchanged = exchangeManagedImportTicket(
                             ticket,
                             apiBase,
@@ -865,6 +868,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             }
             false
         } catch (e: Exception) {
+            if (silent && knownState != null && e is ManagedSubscriptionUnauthorized) throw e
             if (!silent) {
                 val reason = when (e) {
                     is AccessStateRejected -> e.reason

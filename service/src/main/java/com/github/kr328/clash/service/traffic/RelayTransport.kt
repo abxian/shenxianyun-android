@@ -80,7 +80,10 @@ object RelayTransport {
             else -> throw IllegalArgumentException("unsupported entry operation")
         }
         val primary=runCatching {request(context,apiBase.trimEnd('/')+path,"POST",null,body)}.getOrNull()
-        if(primary!=null && primary.status<500)return primary
+        // A gateway can return an HTML 403 before the app handles the request.
+        // Preserve structured business denials from the subscription service.
+        val gatewayDenial = primary?.status == 403 && primary.json.length() == 0
+        if (primary != null && primary.status < 500 && !gatewayDenial) return primary
         return request(context,"$BASE/v1/client/$TENANT/$operation","POST",null,body)
     }
     fun enqueue(context: Context,apiBase: String,token: String,payload: JSONObject): Reply {

@@ -75,7 +75,8 @@ class ProxyActivity : BaseActivity<ProxyDesign>() {
 
                                 design.updateGroup(
                                     it.index,
-                                    group.proxies,
+                                    if (simplified) ProxyGroupResolver.pinManagedRoutingPolicies(group.proxies)
+                                    else group.proxies,
                                     group.type == Proxy.Type.Selector,
                                     state,
                                     unorderedStates
