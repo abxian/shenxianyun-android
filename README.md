@@ -322,3 +322,7 @@ curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
 ## 神仙云 Android 2.11.58 / 211058
 
 首次提取码使用带导入进度的弹窗，修复旧 HTTP 备用线路导致的导入失败，并隐藏无日期的到期提示。详见 [2.11.58 发行说明](docs/RELEASE_2.11.58.md)。
+
+## 神仙云 Android 2.11.59 / 211059
+
+策略置顶、旧订阅地址恢复和首次导入反馈，详见 [2.11.59 发行说明](docs/RELEASE_2.11.59.md)。
