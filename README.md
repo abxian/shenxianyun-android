@@ -326,3 +326,7 @@ curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
 ## 神仙云 Android 2.11.59 / 211059
 
 策略置顶、旧订阅地址恢复和首次导入反馈，详见 [2.11.59 发行说明](docs/RELEASE_2.11.59.md)。
+
+## 神仙云 Android 2.11.60 / 211060
+
+已有有效配置时可先连接，订阅在后台更新。接口暂时不可用时保留原配置和当前连接。明确的账号或设备授权限制仍会提示并处理。 [发行说明](docs/RELEASE_2.11.60.md)
