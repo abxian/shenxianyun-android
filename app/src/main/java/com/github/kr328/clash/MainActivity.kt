@@ -366,7 +366,8 @@ class MainActivity : BaseActivity<MainDesign>() {
 
     private suspend fun sendClientHeartbeat(status: String) = withContext(Dispatchers.IO) {
         val code = savedActivationCode()
-        if (code.isBlank()) {
+        if (code.isBlank() || (status == "online" &&
+                withProfile { queryActive()?.uuid } != managedProfileUuid())) {
             return@withContext
         }
         // 只保存最后一次期望状态，不堆积历史心跳；离线会覆盖更早的在线。
@@ -393,19 +394,19 @@ class MainActivity : BaseActivity<MainDesign>() {
                         this@MainActivity, credentials.deviceToken, path, JSONObject(String(body, Charsets.UTF_8)))
                 val statusCode = reply.status
                 val json = reply.json
-                if (
-                    status != "offline" &&
-                    statusCode == 403 &&
-                    (json?.optString("code") == "device_limit" ||
-                        json?.optString("code") == "traffic_limit")
-                ) {
-                    if (savedActivationCode() == code && loadManagedCredentials()?.deviceToken == credentials.deviceToken) {
-                        activationStore().edit().putString(KEY_ACCESS_RESTRICTION, json?.optString("code", "unavailable")).apply()
-                        design?.setRenewalNeeded(json?.optString("code") == "traffic_limit")
-                        enforceClientLimit(
-                        json?.optString("message", "套餐设备或流量额度已达到上限")
-                            ?: "套餐设备或流量额度已达到上限",
-                        )
+                val restriction = when {
+                    statusCode == 401 && json.optString("message") == "device credential required" ->
+                        "credential_rejected"
+                    statusCode == 403 -> json.optString("code").takeIf(::isConfirmedSubscriptionRestriction)
+                    else -> null
+                }
+                if (status == "online" && restriction != null) {
+                    if (savedActivationCode() == code &&
+                        loadManagedCredentials()?.deviceToken == credentials.deviceToken &&
+                        withProfile { queryActive()?.uuid } == managedProfileUuid()) {
+                        activationStore().edit().putString(KEY_ACCESS_RESTRICTION, restriction).apply()
+                        design?.setRenewalNeeded(restriction == "traffic_limit")
+                        enforceClientLimit(codeImportFailureMessage(restriction))
                     }
                 } else if (
                     status != "offline" &&
