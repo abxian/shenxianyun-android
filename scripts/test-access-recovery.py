@@ -13,7 +13,7 @@ assert s.index('val updateState = knownState ?: queryUpdateState(code)') < s.ind
 assert s.index('val updateState = knownState ?: queryUpdateState(code)') < s.index('val ticket = issueManagedImportTicket(code, apiBase)')
 assert 'error !is ManagedSubscriptionUnauthorized' not in s, 'Do not silently reauthorize revoked credentials'
 assert 'readManagedUpdateState(code, stableClientId())' in s
-assert 'if (status == 403 || status == 404) throw AccessStateRejected' in s
+assert '(status == 403 || status == 404) && isConfirmedSubscriptionRestriction(reason)' in s
 # State checks now delegate to the shared management transport. Follow that
 # wiring: merely keeping the old function-name-local text check rejects the
 # safe refactor, while deleting the check could hide VPN-dependent requests.
@@ -40,7 +40,7 @@ assert 'binding.activationExpiresAt = expiresAt?.trim()?.takeIf' in design
 assert 'it.isNotEmpty() && !it.equals("null", ignoreCase = true)' in design
 assert 'lastSubscriptionUpdateCheck = 0L' in s
 assert 'recoverFromExpired' not in s, 'Old token-rotating recovery must be removed'
-assert s.index('if (code.isNotBlank() && onCodeTrack)') < s.index('requestSubscriptionRefresh(force = true)',s.index('if (code.isNotBlank() && onCodeTrack)')) < s.index('val vpnRequest = startClashService()')
+assert s.index('if (code.isNotBlank() && onCodeTrack)') < s.index('requestSubscriptionRefresh(force = !validCachedProfile)',s.index('if (code.isNotBlank() && onCodeTrack)')) < s.index('val vpnRequest = startClashService()')
 print('PASS: Android integration guards (stopped checks, foreground wake, pre-download revision, original credential, rejection classification, underlying network, renewal entry, startup authority)')
 if '--kotlin' in sys.argv:
     with tempfile.TemporaryDirectory(prefix='sxy-recovery-policy-') as tmp:

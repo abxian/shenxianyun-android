@@ -290,7 +290,8 @@ class MainActivity : BaseActivity<MainDesign>() {
                                 design.checkSubscriptionUpdate()
                                 true
                             } catch (error: CancellationException) { throw error
-                            } catch (_: Exception) { false }
+                            } catch (_: LocalSubscriptionSelected) { true }
+                            catch (_: Exception) { false }
                             subscriptionFailures = if (ok) 0 else minOf(subscriptionFailures + 1, 4)
                             // 失败可能是当前 API 线路失联：后台切到下一条可用线路（api_bases 顺延）。
                             if (!ok) runCatching { EndpointResolver.rotate() }
@@ -300,7 +301,6 @@ class MainActivity : BaseActivity<MainDesign>() {
                             )
                             // 50%~100% 抖动，打散各客户端的请求时间。
                             subscriptionCheckDelay = (backoff * (0.8 + Math.random() * 0.4)).toLong()
-                            subscriptionUpdateInFlight = false
                         }
                     }
                 }
@@ -729,6 +729,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 if (savedActivationCode() == code) {
                     val message = when (error) {
                         is AccessStateRejected -> codeImportFailureMessage(error.reason)
+                        is LocalSubscriptionSelected -> "当前使用其他配置，请切回提取码配置后再更新"
                         is ManagedSubscriptionUnauthorized -> "设备授权已失效，请重新验证提取码；原配置已保留"
                         else -> "配置更新失败，已保留原配置，请稍后重试"
                     }
@@ -762,7 +763,6 @@ class MainActivity : BaseActivity<MainDesign>() {
             val updateState = knownState ?: queryUpdateState(code)
             if (!silent) onStatus?.invoke("提取码已验证，正在验证设备…")
 
-            val activeUuidBefore = withProfile { queryActive()?.uuid }
             val managedUuidBefore = managedProfileUuid()
             val expiredUuidBefore = expiredProfileUuid()
             val existing = loadManagedCredentials()
@@ -828,10 +828,11 @@ class MainActivity : BaseActivity<MainDesign>() {
             if (expiresAt != credentials.expiresAt) {
                 credentials = credentials.copy(expiresAt = expiresAt)
             }
+            val activeUuidAtInstall = withProfile { queryActive()?.uuid }
             val shouldActivate = !silent ||
-                activeUuidBefore == null ||
-                activeUuidBefore == managedUuidBefore ||
-                activeUuidBefore == expiredUuidBefore
+                activeUuidAtInstall == null ||
+                activeUuidAtInstall == managedUuidBefore ||
+                activeUuidAtInstall == expiredUuidBefore
             val uuid = installManagedProfile(code, content, activate = shouldActivate)
             stage = CodeImportStage.Save
             saveManagedCredentials(credentials)
@@ -844,7 +845,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 .putLong(KEY_UPDATE_VERSION, updateVersion)
                 .remove(KEY_ACCESS_RESTRICTION)
             updateState.revision?.let { editor.putString(KEY_SUBSCRIPTION_REVISION, it) }
-            if (activeUuidBefore == expiredUuidBefore && expiredUuidBefore != null) {
+            if (shouldActivate && activeUuidAtInstall == expiredUuidBefore && expiredUuidBefore != null) {
                 withProfile { runCatching { delete(expiredUuidBefore) } }
                 editor.remove(KEY_EXPIRED_PROFILE_UUID)
             }
@@ -898,17 +899,17 @@ class MainActivity : BaseActivity<MainDesign>() {
         val onCodeTrack = active != null &&
             (active.uuid == codeProfileUuid || active.uuid == expiredProfileUuid())
         if (code.isNotBlank() && onCodeTrack) {
+            val validCachedProfile = active?.imported == true &&
+                loadManagedCredentials()?.accessCode == code &&
+                savedAccessRestriction().isBlank() && isActivationStillValid(code) &&
+                !onExpiredPlaceholder()
             if (refreshManagedProfile) {
-                val refresh = requestSubscriptionRefresh(force = true)
-                when (refresh?.let { awaitStartupRefresh(it) }) {
-                    null -> setSubscriptionStatus("配置正在后台更新", true)
-                    false -> return
-                    true -> Unit
-                }
+                val refresh = requestSubscriptionRefresh(force = !validCachedProfile)
+                if (!validCachedProfile && refresh?.let { awaitStartupRefresh(it) } != true) return
             }
-            if (activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() ||
+            if (savedAccessRestriction().isNotBlank() ||
                 !isActivationStillValid(code) || onExpiredPlaceholder()) {
-                val restriction = activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty()
+                val restriction = savedAccessRestriction()
                 val message = when {
                     restriction.isNotBlank() -> codeImportFailureMessage(restriction)
                     !isActivationStillValid(code) -> codeImportFailureMessage("expired")
@@ -997,13 +998,20 @@ class MainActivity : BaseActivity<MainDesign>() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
+    private fun savedAccessRestriction(): String =
+        activationStore().getString(KEY_ACCESS_RESTRICTION, "").orEmpty()
+            .takeIf(::isConfirmedSubscriptionRestriction).orEmpty()
+
+    private class LocalSubscriptionSelected : IllegalStateException()
+
     private class AccessStateRejected(val reason: String, message: String) : IllegalStateException(message)
 
     private suspend fun queryUpdateState(code: String): SubscriptionUpdateState = withTimeout(30_000L) {
         val (status, json) = readManagedUpdateState(code, stableClientId())
         if (status !in 200..299 || !json.optBoolean("ok", false)) {
-            if (status == 403 || status == 404) throw AccessStateRejected(
-                json.optString("code", "unavailable"), json.optString("message", "订阅暂不可用"))
+            val reason = json.optString("code")
+            if ((status == 403 || status == 404) && isConfirmedSubscriptionRestriction(reason))
+                throw AccessStateRejected(reason, json.optString("message", "订阅暂不可用"))
             throw IllegalStateException("订阅状态检查暂不可用")
         }
         SubscriptionUpdateState(
@@ -1093,15 +1101,16 @@ class MainActivity : BaseActivity<MainDesign>() {
         if (code.isBlank()) return
         val active = withProfile { queryActive() } ?: throw IllegalStateException("尚未选择提取码订阅")
         if (active.uuid != managedProfileUuid() && active.uuid != expiredProfileUuid())
-            throw IllegalStateException("当前使用本地配置")
+            throw LocalSubscriptionSelected()
         val store = activationStore()
-        val wasRestricted = store.getString(KEY_ACCESS_RESTRICTION, "").orEmpty().isNotBlank() || onExpiredPlaceholder()
+        val wasRestricted = savedAccessRestriction().isNotBlank() || onExpiredPlaceholder()
         val oldExpiry = store.getString(KEY_EXPIRES_AT, "").orEmpty()
         val state = try { withTimeout(10_000) { queryUpdateState(code) } } catch (error: ManagedStateRetryAfter) {
             subscriptionCheckNotBefore = System.currentTimeMillis() + error.delayMillis
             throw error
         } catch (error: AccessStateRejected) {
             if (savedActivationCode() != code) return
+            if (withProfile { queryActive()?.uuid } != active.uuid) throw LocalSubscriptionSelected()
             store.edit().putString(KEY_ACCESS_RESTRICTION, error.reason).apply()
             setRenewalNeeded(error.reason == "expired" || error.reason == "traffic_limit")
             if (clashRunning) enforceClientLimit(error.message ?: "订阅暂不可用")
@@ -1116,8 +1125,17 @@ class MainActivity : BaseActivity<MainDesign>() {
             localRevision = store.getString(KEY_SUBSCRIPTION_REVISION, ""), remoteRevision = state.revision,
         )
         if (needsRefresh) {
-            if (!importSubscriptionCode(code, silent = true, notifySuccess = false, knownState = state)) {
-                throw IllegalStateException("恢复订阅暂未完成，将自动重试")
+            try {
+                if (!importSubscriptionCode(code, silent = true, notifySuccess = false, knownState = state)) {
+                    throw IllegalStateException("恢复订阅暂未完成，将自动重试")
+                }
+            } catch (error: ManagedSubscriptionUnauthorized) {
+                if (savedActivationCode() == code) {
+                    store.edit().putString(KEY_ACCESS_RESTRICTION, "credential_rejected").apply()
+                    if (clashRunning && withProfile { queryActive()?.uuid } == active.uuid)
+                        enforceClientLimit(codeImportFailureMessage("credential_rejected"))
+                }
+                throw error
             }
         }
         if (savedActivationCode() != code) return

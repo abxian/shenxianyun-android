@@ -257,7 +257,8 @@ internal suspend fun Context.fetchManagedSubscription(
         null
     }
     if (current != null) {
-        if (current.status == 401 || current.status == 403) throw ManagedSubscriptionUnauthorized()
+        if (current.status == 401 && current.json.optString("message") == "device credential required")
+            throw ManagedSubscriptionUnauthorized()
         if (current.status == 200 && current.json.optBoolean("ok")) {
             return@withContext current.json.getString("content")
                 .takeIf { it.isNotBlank() }

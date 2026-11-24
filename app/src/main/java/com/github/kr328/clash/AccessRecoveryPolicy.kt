@@ -11,3 +11,7 @@ internal fun shouldRefreshAccessSubscription(
     remoteRevision: String?,
 ): Boolean = startup || restricted || expiryChanged ||
     (!remoteRevision.isNullOrBlank() && remoteRevision != localRevision) || remoteVersion > localVersion
+
+internal fun isConfirmedSubscriptionRestriction(code: String): Boolean =
+    code in setOf("expired", "traffic_limit", "code_disabled", "invalid_code", "device_limit",
+        "bound_limit", "credential_rejected")

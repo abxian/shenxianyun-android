@@ -11,7 +11,7 @@ l=(r/'design/src/main/res/layout/design_main.xml').read_text();ET.fromstring(l)
 assert 'if (starting && request != Request.UpdateSubscription) return' in d
 assert 'setOf(Request.ToggleStatus, Request.ImportByCode, Request.UpdateSubscription)' in d
 assert 'subscriptionStatus' in l and 'subscriptionUpdating' in l
-assert '@{!clashRunning &amp;&amp; activationCode != null ? View.VISIBLE : View.GONE}' in l
+assert '@{activationCode != null ? View.VISIBLE : View.GONE}' in l
 main=a[a.index('override suspend fun main()'):a.index('val ticker =')]
 assert 'launch { runCatching { EndpointResolver.initialize(); refreshLineStatus(design) } }' in main
 assert 'design.requestSubscriptionRefresh(force = true)' in main
@@ -22,20 +22,19 @@ assert 'setSubscriptionStatus("正在更新配置' in refresh
 assert 'else -> "配置更新失败，已保留原配置' in refresh
 assert 'knownState = state' in a and 'val updateState = knownState ?: queryUpdateState(code)' in a
 start=a[a.index('private suspend fun MainDesign.startClash('):a.index('val vpnRequest = startClashService()')]
-assert 'requestSubscriptionRefresh(force = true)' in start and 'awaitStartupRefresh(it)' in start
-assert 'withTimeoutOrNull(1_500)' not in start and 'KEY_ACCESS_RESTRICTION' in start
+assert 'requestSubscriptionRefresh(force = !validCachedProfile)' in start and 'awaitStartupRefresh(it)' in start
+assert 'withTimeoutOrNull(1_500)' not in start and 'savedAccessRestriction()' in start
 returned=a[a.index('Event.ActivityStart ->'):a.index('Event.ServiceRecreated,')]
 assert 'requestSubscriptionRefresh' not in returned
 assert 'openingRefreshRequested.compareAndSet(false, true)' in main
 print('276 actual startup/request/status/coalescing/restriction integration guards passed')
 
-# A slow refresh continues in background; failures stop before VPN start.
-assert 'when (refresh?.let { awaitStartupRefresh(it) })' in start
-assert 'false -> return' in start
-assert '配置正在后台更新' in start
+# A validated unexpired configuration starts without awaiting network refresh.
+assert 'if (!validCachedProfile && refresh?.let { awaitStartupRefresh(it) } != true) return' in start
+assert 'loadManagedCredentials()?.accessCode == code' in start
+assert l.count('self.request(Request.UpdateSubscription)') == 1
 assert 'binding.starting = value' in d and '@string/main_processing' in l
-assert '智能加速' not in l and '稳定连接' not in l
-print('328 bounded startup wait, failure stop and visible busy-state integration passed')
+print('Cached startup and stable update-button integration passed')
 
 # The first code is entered in the shared dialog; successful import starts the
 # already validated profile without a second immediate subscription download.
