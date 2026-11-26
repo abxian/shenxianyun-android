@@ -35,11 +35,14 @@ resolver=(r/'app/src/main/java/com/github/kr328/clash/EndpointResolver.kt').read
 assert 'https://sxy-api.52nm.de:5443' in resolver
 assert 'https://sxy.52nm.de:5443/endpoints.json' in resolver
 assert 'listOf(DEFAULT_API_BASE, ALTERNATE_API_BASE)' in resolver
-assert 'listOf(apiBase,stateAlternate).distinct()' in compact(entry)
+assert '(listOf(apiBase)+stateAlternates).distinct()' in compact(entry)
 assert entry.index('for (base in routes)') < entry.index('/v1/client/$TENANT/$operation')
-assert 'operation == "state" && stateAlternate != null' in entry
-assert 'stateAlternate = EndpointResolver.managedStateAlternate(apiBase)' in state
+assert 'operation == "state"' in entry
+assert 'stateAlternates = EndpointResolver.managedStateAlternates(apiBase)' in state
 assert 'reply.apiBase?.let(EndpointResolver::setActive)' in state
+assert 'managedSubscriptionApiBase(credentials.apiBase)' in network
+assert 'url in AUTHORITATIVE_DISCOVERY_URLS' in resolver
+assert '(discoveredManagedBases() + ALTERNATE_API_BASE + DEFAULT_API_BASE)' in resolver
 assert 'renewalNeeded' in layout and 'Request.RenewCode' in layout
 assert 'activationCode == null || activationExpiresAt == null ? View.GONE : View.VISIBLE' in layout
 assert '!clashRunning || activationExpiresAt == null' not in layout

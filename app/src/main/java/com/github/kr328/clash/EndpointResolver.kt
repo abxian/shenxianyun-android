@@ -28,18 +28,30 @@ object EndpointResolver {
     private fun allApiBases(): List<String> =
         (PINNED_API_BASES + cachedBases() + LEGACY_EDGE_API_BASE).distinct()
 
-    private val DISCOVERY_URLS = listOf(
+    private val AUTHORITATIVE_DISCOVERY_URLS = listOf(
         "https://sxy.52nm.de:5443/endpoints.json",
-        "https://sxy.sxnn.de:5443/endpoints.json",
         "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
+    )
+    private val LEGACY_DISCOVERY_URLS = listOf(
+        "https://sxy.sxnn.de:5443/endpoints.json",
         "https://sxnn.de/api/endpoints",
     )
 
-    internal fun managedStateAlternate(activeBase: String): String =
-        if (activeBase == ALTERNATE_API_BASE) DEFAULT_API_BASE else ALTERNATE_API_BASE
+    private fun discoveredManagedBases(): List<String> =
+        prefs.getString(KEY_TRUSTED_BASES, null).orEmpty().lineSequence()
+            .map(::normalizeBase).filter { it.startsWith("https://") }.toList()
+
+    internal fun managedStateAlternates(activeBase: String): List<String> =
+        (discoveredManagedBases() + ALTERNATE_API_BASE + DEFAULT_API_BASE)
+            .distinct().filterNot { it == activeBase }.take(2)
+
+    internal fun managedSubscriptionApiBase(savedBase: String): String =
+        apiBase().takeIf { it in PINNED_API_BASES || it in discoveredManagedBases() }
+            ?: savedBase
 
     private const val STORE = "jc116_endpoints"
     private const val KEY_API_BASES = "api_bases"
+    private const val KEY_TRUSTED_BASES = "trusted_api_bases"
     private const val KEY_ACTIVE_BASE = "api_base_active"
     private const val KEY_SUB_BASE = "sub_base"
     private const val KEY_DOWNLOAD_BASE = "download_base"
@@ -53,7 +65,11 @@ object EndpointResolver {
 
     private fun normalizeBase(value: String?): String {
         val v = value?.trim()?.trimEnd('/') ?: return ""
-        return if (v.startsWith("http://") || v.startsWith("https://")) v else ""
+        val uri = runCatching { java.net.URI(v) }.getOrNull() ?: return ""
+        return v.takeIf {
+            uri.scheme == "https" && uri.host != null &&
+                uri.userInfo == null && uri.query == null && uri.fragment == null
+        }.orEmpty()
     }
 
     private fun cachedBases(): List<String> =
@@ -124,7 +140,7 @@ object EndpointResolver {
 
     /** 拉取发现源（依次尝试），成功则写入缓存。全部失败静默返回（保留旧缓存）。 */
     private fun refresh() {
-        for (url in DISCOVERY_URLS) {
+        for (url in AUTHORITATIVE_DISCOVERY_URLS + LEGACY_DISCOVERY_URLS) {
             try {
                 val (code, body) = httpGet(url, DISCOVERY_TIMEOUT_MS)
                 if (code !in 200..299 || body.isBlank()) continue
@@ -139,6 +155,10 @@ object EndpointResolver {
                     .putString(KEY_SUB_BASE, normalizeBase(json.optString("sub_base")))
                     .putString(KEY_DOWNLOAD_BASE, normalizeBase(json.optString("download_base")))
                     .putString(KEY_BOOTSTRAP_PROXY, json.optString("bootstrap_proxy").trim())
+                    .also { editor ->
+                        if (url in AUTHORITATIVE_DISCOVERY_URLS)
+                            editor.putString(KEY_TRUSTED_BASES, bases.joinToString("\n"))
+                    }
                     .apply()
                 return
             } catch (_: Exception) {

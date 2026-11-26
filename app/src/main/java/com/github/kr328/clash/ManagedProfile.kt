@@ -249,7 +249,7 @@ internal suspend fun Context.fetchManagedSubscription(
     val current = try {
         RelayTransport.request(
             this@fetchManagedSubscription,
-            secureManagedApiBase(credentials.apiBase) + "/api/v2/client/subscription",
+            secureManagedApiBase(EndpointResolver.managedSubscriptionApiBase(credentials.apiBase)) + "/api/v2/client/subscription",
             "GET",
             credentials.deviceToken,
         )
@@ -323,7 +323,7 @@ internal suspend fun Context.readManagedUpdateState(code: String, clientId: Stri
         apiBase,
         "state",
         JSONObject().put("code", code).put("client_id", clientId),
-        stateAlternate = EndpointResolver.managedStateAlternate(apiBase),
+        stateAlternates = EndpointResolver.managedStateAlternates(apiBase),
     )
     if (reply.status == 429 || reply.status == 503)
         throw ManagedStateRetryAfter(maxOf(30_000L, reply.retryAfter))

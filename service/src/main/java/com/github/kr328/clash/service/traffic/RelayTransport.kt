@@ -84,7 +84,7 @@ object RelayTransport {
         apiBase: String,
         operation: String,
         body: JSONObject,
-        stateAlternate: String? = null,
+        stateAlternates: List<String> = emptyList(),
     ): Reply {
         val path=when(operation){
             "ticket" -> "/api/import/ticket"
@@ -93,8 +93,8 @@ object RelayTransport {
             "state" -> "/api/v2/client/state"
             else -> throw IllegalArgumentException("unsupported entry operation")
         }
-        val routes = if (operation == "state" && stateAlternate != null) {
-            listOf(apiBase, stateAlternate).distinct()
+        val routes = if (operation == "state") {
+            (listOf(apiBase) + stateAlternates).distinct()
         } else {
             listOf(apiBase)
         }
