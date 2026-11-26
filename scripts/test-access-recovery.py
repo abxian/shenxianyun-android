@@ -42,6 +42,8 @@ assert 'stateAlternates = EndpointResolver.managedStateAlternates(apiBase)' in s
 assert 'reply.apiBase?.let(EndpointResolver::setActive)' in state
 assert 'managedSubscriptionApiBase(credentials.apiBase)' in network
 assert 'url in AUTHORITATIVE_DISCOVERY_URLS' in resolver
+rotation=resolver[resolver.index('suspend fun rotate()'):]
+assert rotation.index('pickApiBase(tried)') < rotation.index('refresh()') < rotation.index('it in tried')
 assert '(discoveredManagedBases() + ALTERNATE_API_BASE + DEFAULT_API_BASE)' in resolver
 assert 'renewalNeeded' in layout and 'Request.RenewCode' in layout
 assert 'activationCode == null || activationExpiresAt == null ? View.GONE : View.VISIBLE' in layout

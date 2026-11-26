@@ -213,6 +213,11 @@ object EndpointResolver {
     /** On failure choose a reachable alternative; keep the saved choice if all are offline. */
     suspend fun rotate(): String = withContext(Dispatchers.IO) {
         val bad = apiBase()
-        pickApiBase(allApiBases().filterNot { it == bad }) ?: bad
+        val tried = allApiBases().filterNot { it == bad }
+        val reachable = pickApiBase(tried)
+        if (reachable != null) return@withContext reachable
+
+        refresh()
+        pickApiBase(allApiBases().filterNot { it == bad || it in tried }) ?: bad
     }
 }
