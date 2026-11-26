@@ -1106,7 +1106,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         val store = activationStore()
         val wasRestricted = savedAccessRestriction().isNotBlank() || onExpiredPlaceholder()
         val oldExpiry = store.getString(KEY_EXPIRES_AT, "").orEmpty()
-        val state = try { withTimeout(10_000) { queryUpdateState(code) } } catch (error: ManagedStateRetryAfter) {
+        val state = try { queryUpdateState(code) } catch (error: ManagedStateRetryAfter) {
             subscriptionCheckNotBefore = System.currentTimeMillis() + error.delayMillis
             throw error
         } catch (error: AccessStateRejected) {

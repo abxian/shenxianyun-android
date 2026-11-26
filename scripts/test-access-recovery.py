@@ -40,7 +40,12 @@ assert entry.index('for (base in routes)') < entry.index('/v1/client/$TENANT/$op
 assert 'operation == "state"' in entry
 assert 'stateAlternates = EndpointResolver.managedStateAlternates(apiBase)' in state
 assert 'reply.apiBase?.let(EndpointResolver::setActive)' in state
-assert 'managedSubscriptionApiBase(credentials.apiBase)' in network
+download=network[network.index('internal suspend fun Context.fetchManagedSubscription'):network.index('internal suspend fun Context.installManagedProfile')]
+assert 'managedSubscriptionApiBase(savedBase)' in download
+assert download.index('if (switched) downloadFromDeviceApi(activeBase)') < download.index('URL(credentials.subscriptionUrl)')
+assert download.index('if (!switched) downloadFromDeviceApi(activeBase)') < download.index('RelayTransport.subscription(')
+assert 'credentials.deviceToken' in download and 'throw ManagedSubscriptionUnauthorized()' in download
+assert 'withTimeout(10_000) { queryUpdateState(code) }' not in s
 assert 'url in AUTHORITATIVE_DISCOVERY_URLS' in resolver
 rotation=resolver[resolver.index('suspend fun rotate()'):]
 assert rotation.index('pickApiBase(tried)') < rotation.index('refresh()') < rotation.index('it in tried')

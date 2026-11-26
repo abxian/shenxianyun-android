@@ -335,3 +335,8 @@ curl -T shenxianyunall.apk  "$DUFS/shenxianyunall.apk"
 ## 神仙云 Android 2.11.61 / 211061
 
 修复旧入口不可用时首次输入提取码无法继续的问题。 [发行说明](docs/RELEASE_2.11.61.md)
+
+
+## 神仙云 Android 2.11.62 / 211062
+
+修复切换服务地址后启动自动更新配置仍等待旧下载地址的问题。 [发行说明](docs/RELEASE_2.11.62.md)

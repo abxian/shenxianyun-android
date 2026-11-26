@@ -205,6 +205,31 @@ internal class ManagedSubscriptionUnauthorized : IllegalStateException("设备�
 internal suspend fun Context.fetchManagedSubscription(
     credentials: ManagedCredentials,
 ): String = withContext(Dispatchers.IO) {
+    val savedBase = secureManagedApiBase(credentials.apiBase)
+    val activeBase = secureManagedApiBase(EndpointResolver.managedSubscriptionApiBase(savedBase))
+    suspend fun downloadFromDeviceApi(base: String): String? {
+        val reply = try {
+            RelayTransport.request(
+                this@fetchManagedSubscription,
+                base.trimEnd('/') + "/api/v2/client/subscription",
+                "GET",
+                credentials.deviceToken,
+            )
+        } catch (_: IOException) {
+            return null
+        }
+        if (reply.status == 401 && reply.json.optString("message") == "device credential required")
+            throw ManagedSubscriptionUnauthorized()
+        if (reply.status == 200 && reply.json.optBoolean("ok"))
+            return reply.json.getString("content").takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("受管订阅内容为空")
+        return null
+    }
+
+    // The saved URL belongs to the old domain after a successful service switch.
+    // Use the original device credential on the live service before that URL.
+    val switched = activeBase != savedBase
+    if (switched) downloadFromDeviceApi(activeBase)?.let { return@withContext it }
     // Bind the download to an underlying network when a VPN is active. This avoids
     // depending on the very nodes being refreshed; the default route remains a fallback.
     val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -214,15 +239,15 @@ internal suspend fun Context.fetchManagedSubscription(
                 it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
         } == true
     }
-    val routes: List<Network?> = underlying + listOf(null)
+    val routes: List<Network?> = underlying.take(1) + listOf(null)
     var failure: IOException? = null
     for (network in routes) {
         var connection: HttpURLConnection? = null
         try {
             val url = URL(credentials.subscriptionUrl)
             connection = ((network?.openConnection(url) ?: url.openConnection()) as HttpURLConnection).apply {
-                connectTimeout = 12_000
-                readTimeout = 12_000
+                connectTimeout = 2_000
+                readTimeout = 3_000
                 requestMethod = "GET"
                 instanceFollowRedirects = false
                 setRequestProperty("Authorization", "Bearer ${credentials.deviceToken}")
@@ -243,28 +268,8 @@ internal suspend fun Context.fetchManagedSubscription(
             connection?.disconnect()
         }
     }
-    // A superseded subscription URL can fail even when the existing device is still
-    // authorized. The current endpoint checks the same device token and subscription
-    // policy on the server. Never register a device again as part of a refresh.
-    val current = try {
-        RelayTransport.request(
-            this@fetchManagedSubscription,
-            secureManagedApiBase(EndpointResolver.managedSubscriptionApiBase(credentials.apiBase)) + "/api/v2/client/subscription",
-            "GET",
-            credentials.deviceToken,
-        )
-    } catch (e: IOException) {
-        null
-    }
-    if (current != null) {
-        if (current.status == 401 && current.json.optString("message") == "device credential required")
-            throw ManagedSubscriptionUnauthorized()
-        if (current.status == 200 && current.json.optBoolean("ok")) {
-            return@withContext current.json.getString("content")
-                .takeIf { it.isNotBlank() }
-                ?: throw IllegalStateException("受管订阅内容为空")
-        }
-    }
+    // Never register a device again on refresh. The same host can recover a superseded URL.
+    if (!switched) downloadFromDeviceApi(activeBase)?.let { return@withContext it }
     return@withContext try { RelayTransport.subscription(this@fetchManagedSubscription, credentials.deviceToken) }
     catch (_: Exception) { throw failure ?: IOException("订阅网络不可用，已保留原配置") }
 }
