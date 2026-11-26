@@ -86,6 +86,49 @@ object EndpointResolver {
 
     fun downloadBase(): String = normalizeBase(prefs.getString(KEY_DOWNLOAD_BASE, null))
 
+    internal suspend fun appVersion(): JSONObject? = withContext(Dispatchers.IO) {
+        val current = apiBase()
+        readAppVersion(current)?.let { return@withContext it }
+        val next = rotate()
+        if (next == current) null else readAppVersion(next)
+    }
+
+    private fun readAppVersion(base: String): JSONObject? = try {
+        val (status, body) = httpGet("$base/api/app-version", PROBE_TIMEOUT_MS)
+        if (status in 200..299) JSONObject(body).takeIf { it.optBoolean("ok") } else null
+    } catch (_: java.io.IOException) {
+        null
+    } catch (_: org.json.JSONException) {
+        null
+    }
+
+    internal suspend fun apkDownloadUrl(version: String, primary: String): String? = withContext(Dispatchers.IO) {
+        val release = version.takeIf { Regex("""\d+\.\d+\.\d+""").matches(it) }?.let {
+            "https://github.com/abxian/shenxianyun-android/releases/download/v$it/shenxianyun.apk"
+        }
+        val official = runCatching { java.net.URI(primary) }.getOrNull()?.takeIf {
+            it.scheme == "https" && it.host != null && it.userInfo == null
+        }?.toString()
+        val available = official?.takeIf { url ->
+            try {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "HEAD"
+                    connectTimeout = PROBE_TIMEOUT_MS
+                    readTimeout = PROBE_TIMEOUT_MS
+                    instanceFollowRedirects = false
+                }
+                try {
+                    connection.responseCode in 200..299 && connection.contentLength > 0
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (_: java.io.IOException) {
+                false
+            }
+        }
+        available ?: release ?: official
+    }
+
     /** 后台下发的兜底代理（http://[user:pass@]host:port，也支持 socks5://）。无则空串。 */
     fun bootstrapProxy(): String {
         val v = prefs.getString(KEY_BOOTSTRAP_PROXY, null)?.trim() ?: return ""
@@ -167,14 +210,7 @@ object EndpointResolver {
         }
     }
 
-    private fun probe(base: String): Boolean = try {
-        val (status, body) = httpGet("$base/api/app-version", PROBE_TIMEOUT_MS)
-        status in 200..299 && JSONObject(body).let {
-            it.optBoolean("ok") && it.opt("latest_version_name") is String
-        }
-    } catch (_: Exception) {
-        false
-    }
+    private fun probe(base: String): Boolean = readAppVersion(base)?.opt("latest_version_name") is String
 
     /** Probe concurrently while preserving the order of the selected candidates. */
     private suspend fun pickApiBase(bases: List<String>): String? = coroutineScope {

@@ -59,6 +59,11 @@
     <string name="profile_name">配置名称</string>
     <string name="profiles">配置</string>
     <string name="profiles_subscription_hint">粘贴订阅链接</string>
+    <string name="import_other_subscription">导入其他订阅</string>
+    <string name="import_https_subscription_hint">粘贴 HTTPS Clash / Mihomo 订阅链接</string>
+    <string name="subscription_save_and_use">保存并使用</string>
+    <string name="subscription_invalid_https">请输入有效的 HTTPS 订阅链接</string>
+    <string name="other_subscription_failed">未能导入，请检查订阅链接、网络或配置格式。原配置已保留。</string>
     <string name="import_by_code">提取码订阅</string>
     <string name="code_bound">提取码已绑定</string>
     <string name="switch_import_code">切换提取码</string>

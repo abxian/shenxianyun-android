@@ -602,6 +602,7 @@ class MainActivity : BaseActivity<MainDesign>() {
         val progress = content.findViewById<ProgressBar>(R.id.code_dialog_progress)
         val confirm = content.findViewById<TextView>(R.id.code_dialog_confirm)
         val cancel = content.findViewById<TextView>(R.id.code_dialog_cancel)
+        val other = content.findViewById<TextView>(R.id.code_dialog_other)
         content.findViewById<TextView>(R.id.code_dialog_title).setText(
             if (firstImport) R.string.import_code_title else R.string.switch_import_code
         )
@@ -624,8 +625,16 @@ class MainActivity : BaseActivity<MainDesign>() {
                 .setInterpolator(DecelerateInterpolator()).start()
         }
         cancel.setOnClickListener { dialog.dismiss() }
+        other.setOnClickListener {
+            dialog.dismiss()
+            startActivity(ProfilesActivity::class.intent.putExtra(ProfilesActivity.EXTRA_OTHER_IMPORT, true))
+        }
         confirm.setOnClickListener {
             val code = input.text.toString().trim()
+            if (isOtherSubscriptionCommand(code)) {
+                other.performClick()
+                return@setOnClickListener
+            }
             if (code.isBlank() || code.length > 128) {
                 status.setText(if (code.isBlank()) R.string.import_code_empty else R.string.import_code_too_long)
                 input.requestFocus()
@@ -634,6 +643,7 @@ class MainActivity : BaseActivity<MainDesign>() {
             dialog.window?.let { WindowInsetsControllerCompat(it, input).hide(WindowInsetsCompat.Type.ime()) }
             confirm.isEnabled = false
             cancel.isEnabled = false
+            other.isEnabled = false
             input.isEnabled = false
             progress.isVisible = true
             dialog.setCancelable(false)
@@ -661,6 +671,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                     }
                     confirm.isEnabled = true
                     cancel.isEnabled = true
+                    other.isEnabled = true
                     input.isEnabled = true
                     progress.isVisible = false
                     dialog.setCancelable(true)
@@ -1023,50 +1034,28 @@ class MainActivity : BaseActivity<MainDesign>() {
     }
 
     private suspend fun MainDesign.checkAppUpdate() {
-        val update = withContext(Dispatchers.IO) {
-            val connection = (URL("${EndpointResolver.apiBase()}/api/app-version").openConnection() as HttpURLConnection).apply {
-                connectTimeout = 8000
-                readTimeout = 8000
-                requestMethod = "GET"
-            }
-
-            try {
-                if (connection.responseCode !in 200..299) {
-                    return@withContext null
-                }
-
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(body)
-                if (!json.optBoolean("ok", false)) {
-                    return@withContext null
-                }
-
-                val latestCode = json.optLong("latest_version_code", 0L)
-                val apkUrl = json.optString("apk_url", "")
-                val versionName = json.optString("latest_version_name", "").ifBlank { latestCode.toString() }
-                val currentCode = packageManager.getPackageInfo(packageName, 0).versionCodeCompat
-
-                if (latestCode > currentCode && apkUrl.isNotBlank()) {
-                    Triple(versionName, apkUrl, json.optString("notes", "").takeUnless { it == "null" }.orEmpty().trim())
-                } else {
-                    null
-                }
-            } finally {
-                connection.disconnect()
-            }
-        } ?: return
+        val metadata = EndpointResolver.appVersion() ?: return
+        val latestCode = metadata.optLong("latest_version_code", 0L)
+        val currentCode = packageManager.getPackageInfo(packageName, 0).versionCodeCompat
+        if (latestCode <= currentCode) return
+        val apkUrl = metadata.optString("apk_url")
+        val version = metadata.optString("latest_version_name").ifBlank { latestCode.toString() }
+        val notes = metadata.optString("notes", "").takeUnless { it == "null" }.orEmpty().trim()
 
         withContext(Dispatchers.Main) {
             val content = layoutInflater.inflate(R.layout.dialog_app_update, null)
-            content.findViewById<android.widget.TextView>(R.id.app_update_version).text = update.first
-            content.findViewById<android.widget.TextView>(R.id.app_update_description).text = getString(R.string.app_update_message, update.first)
-            content.findViewById<android.widget.TextView>(R.id.app_update_notes).text = update.third
+            content.findViewById<android.widget.TextView>(R.id.app_update_version).text = version
+            content.findViewById<android.widget.TextView>(R.id.app_update_description).text = getString(R.string.app_update_message, version)
+            content.findViewById<android.widget.TextView>(R.id.app_update_notes).text = notes
             content.findViewById<android.view.View>(R.id.app_update_details).visibility =
-                if (update.third.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
+                if (notes.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
             val dialog = AlertDialog.Builder(this@MainActivity)
                 .setView(content)
                 .setPositiveButton(R.string.app_update_now) { _, _ ->
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.second)))
+                    lifecycleScope.launch {
+                        val url = EndpointResolver.apkDownloadUrl(version, apkUrl)
+                        if (url != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
                 }
                 .setNegativeButton(R.string.app_update_later, null)
                 .create()

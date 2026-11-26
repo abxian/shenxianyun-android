@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CodeImportPolicyTest {
+    @Test fun otherIsAnExactLocalCommand() {
+        assertTrue(isOtherSubscriptionCommand(" Other "))
+        assertFalse(isOtherSubscriptionCommand("other123"))
+        assertFalse(isOtherSubscriptionCommand("https://other"))
+    }
+
     @Test fun authoritativeCodeAndExpiryAreDistinct() {
         assertTrue(codeImportFailureMessage("invalid_code").contains("错误或不存在"))
         assertTrue(codeImportFailureMessage("expired").contains("已过期"))

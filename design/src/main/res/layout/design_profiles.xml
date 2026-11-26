@@ -105,9 +105,19 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:onClick="@{() -> self.requestSaveSubscription()}"
+                android:onClick="@{() -> self.requestSaveSubscription(false)}"
                 android:text="@string/save" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/save_and_use_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginEnd="16dp"
+            android:onClick="@{() -> self.requestSaveSubscription(true)}"
+            android:text="@string/subscription_save_and_use"
+            android:visibility="gone" />
 
         <com.github.kr328.clash.design.view.AppRecyclerView
             android:id="@+id/recycler_list"

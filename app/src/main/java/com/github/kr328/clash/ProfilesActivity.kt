@@ -16,6 +16,7 @@ import com.github.kr328.clash.util.withProfile
 import androidx.lifecycle.lifecycleScope
 import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -26,10 +27,15 @@ import java.util.concurrent.TimeUnit
 import com.github.kr328.clash.design.R
 
 class ProfilesActivity : BaseActivity<ProfilesDesign>() {
+    companion object {
+        const val EXTRA_OTHER_IMPORT = "other_subscription_import"
+    }
+
     private val scanLauncher = registerForActivityResult(ScanQRCode(), ::scanResultHandler)
+    private val otherImport: Boolean get() = intent.getBooleanExtra(EXTRA_OTHER_IMPORT, false)
 
     override suspend fun main() {
-        val design = ProfilesDesign(this, managedProfileUuid())
+        val design = ProfilesDesign(this, managedProfileUuid(), otherImport)
 
         setContentDesign(design)
 
@@ -50,7 +56,7 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                         ProfilesDesign.Request.Create ->
                             startActivity(NewProfileActivity::class.intent)
                         is ProfilesDesign.Request.SaveSubscription ->
-                            design.saveSubscription(it.url)
+                            design.saveSubscription(it.url, it.activate)
                         ProfilesDesign.Request.Scan ->
                             scanLauncher.launch(null)
                         ProfilesDesign.Request.UpdateAll ->
@@ -101,33 +107,45 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
         }
     }
 
-    // 保存订阅链接（顶部输入框或扫码）：创建 URL 配置、下载并设为当前激活配置。
-    // 无需提取码，纯订阅链接即可。
-    private suspend fun ProfilesDesign.saveSubscription(rawUrl: String) {
+    private suspend fun ProfilesDesign.saveSubscription(rawUrl: String, activate: Boolean) {
         val url = rawUrl.trim()
-        if (url.isEmpty()) {
+        val uri = runCatching { java.net.URI(url) }.getOrNull()
+        if (url.isEmpty() || (otherImport &&
+                (uri == null || !uri.scheme.equals("https", ignoreCase = true) ||
+                    uri.host.isNullOrBlank() || uri.userInfo != null))
+        ) {
+            setSubscriptionBusy(false)
+            if (otherImport) showToast(R.string.subscription_invalid_https, ToastDuration.Long)
             return
         }
         val name = runCatching { Uri.parse(url).host }
             .getOrNull()?.takeIf { h -> h.isNotBlank() }
             ?: getString(R.string.new_profile)
+        setSubscriptionBusy(true)
+        var saved = false
         try {
             withProfile {
                 val uuid = create(Profile.Type.Url, name)
                 try {
                     patch(uuid, name, url, 0)
                     commit(uuid, null)
-                    queryByUUID(uuid)?.let { p -> setActive(p) }
+                    if (activate) setActive(checkNotNull(queryByUUID(uuid)))
                 } catch (e: Exception) {
                     runCatching { delete(uuid) }
                     throw e
                 }
             }
-            fetch()
+            saved = true
             showToast(R.string.import_code_success, ToastDuration.Long)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            showExceptionToast(e)
+            if (otherImport) showToast(R.string.other_subscription_failed, ToastDuration.Long)
+            else showExceptionToast(e)
+        } finally {
+            setSubscriptionBusy(false, clear = saved)
         }
+        if (saved) fetch()
     }
 
     private fun scanResultHandler(result: QRResult) {
@@ -136,7 +154,7 @@ class ProfilesActivity : BaseActivity<ProfilesDesign>() {
                 is QRResult.QRSuccess -> {
                     val url = result.content.rawValue
                         ?: result.content.rawBytes?.let { String(it) }.orEmpty()
-                    design?.saveSubscription(url)
+                    design?.saveSubscription(url, activate = !otherImport)
                 }
                 QRResult.QRUserCanceled -> {}
                 QRResult.QRMissingPermission ->

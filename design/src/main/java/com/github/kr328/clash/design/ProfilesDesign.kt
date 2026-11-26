@@ -20,11 +20,12 @@ import java.util.UUID
 class ProfilesDesign(
     context: Context,
     private val managedProfileUuid: UUID?,
+    private val otherImport: Boolean = false,
 ) : Design<ProfilesDesign.Request>(context) {
     sealed class Request {
         object UpdateAll : Request()
         object Create : Request()
-        data class SaveSubscription(val url: String) : Request()
+        data class SaveSubscription(val url: String, val activate: Boolean) : Request()
         object Scan : Request()
         data class Active(val profile: Profile) : Request()
         data class Update(val profile: Profile) : Request()
@@ -75,6 +76,10 @@ class ProfilesDesign(
 
     init {
         binding.self = this
+        if (otherImport) {
+            binding.subscriptionInput.setHint(R.string.import_https_subscription_hint)
+            binding.saveAndUseButton.visibility = View.VISIBLE
+        }
 
         binding.activityBarLayout.applyFrom(context)
 
@@ -114,15 +119,25 @@ class ProfilesDesign(
         requests.trySend(Request.Create)
     }
 
-    // 顶部常驻输入框：读取订阅链接，非空则提交保存并清空输入框。
-    fun requestSaveSubscription() {
+    fun requestSaveSubscription(activate: Boolean) {
         val url = binding.subscriptionInput.text?.toString()?.trim().orEmpty()
-        if (url.isEmpty()) {
+        if (url.isEmpty() || !binding.saveButton.isEnabled) {
             return
         }
-        requests.trySend(Request.SaveSubscription(url))
-        binding.subscriptionInput.text?.clear()
-        binding.subscriptionInput.clearFocus()
+        if (requests.trySend(Request.SaveSubscription(url, activate || !otherImport)).isSuccess) {
+            setSubscriptionBusy(true)
+        }
+    }
+
+    fun setSubscriptionBusy(busy: Boolean, clear: Boolean = false) {
+        binding.subscriptionInput.isEnabled = !busy
+        binding.saveButton.isEnabled = !busy
+        binding.saveAndUseButton.isEnabled = !busy
+        binding.scanButton.isEnabled = !busy
+        if (clear) {
+            binding.subscriptionInput.text?.clear()
+            binding.subscriptionInput.clearFocus()
+        }
     }
 
     // 扫码导入订阅：交给 Activity 启动相机扫码，扫到链接后按订阅链接保存。

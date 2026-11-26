@@ -1,5 +1,8 @@
 package com.github.kr328.clash
 
+internal fun isOtherSubscriptionCommand(value: String): Boolean =
+    value.trim().equals("other", ignoreCase = true)
+
 /** Only structured service codes enter user-facing messages. Never print remote details. */
 internal class ManagedImportRejected(val reason: String) : IllegalStateException()
 
