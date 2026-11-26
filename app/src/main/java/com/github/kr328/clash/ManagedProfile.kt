@@ -317,8 +317,17 @@ internal class ManagedStateRetryAfter(val delayMillis: Long) : IllegalStateExcep
 
 /** Status must remain reachable when the active tunnel's nodes are blocked. */
 internal suspend fun Context.readManagedUpdateState(code: String, clientId: String): Pair<Int, JSONObject> = withContext(Dispatchers.IO) {
-    val reply=RelayTransport.entry(this@readManagedUpdateState,secureManagedApiBase(EndpointResolver.apiBase()),"state",
-        JSONObject().put("code",code).put("client_id",clientId))
-    if(reply.status==429 || reply.status==503)throw ManagedStateRetryAfter(maxOf(30_000L,reply.retryAfter))
+    val apiBase = secureManagedApiBase(EndpointResolver.apiBase())
+    val reply = RelayTransport.entry(
+        this@readManagedUpdateState,
+        apiBase,
+        "state",
+        JSONObject().put("code", code).put("client_id", clientId),
+        stateAlternate = EndpointResolver.managedStateAlternate(apiBase),
+    )
+    if (reply.status == 429 || reply.status == 503)
+        throw ManagedStateRetryAfter(maxOf(30_000L, reply.retryAfter))
+    if (reply.status in 200..299 && reply.json.optBoolean("ok"))
+        reply.apiBase?.let(EndpointResolver::setActive)
     reply.status to reply.json
 }

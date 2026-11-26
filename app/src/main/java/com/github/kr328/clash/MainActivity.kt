@@ -1163,6 +1163,8 @@ class MainActivity : BaseActivity<MainDesign>() {
               - "$EXPIRED_NODE_NAME"
         rules:
           - DOMAIN-SUFFIX,jc116.com,DIRECT
+          - DOMAIN,sxy-api.52nm.de,DIRECT
+          - DOMAIN,sxy.52nm.de,DIRECT
           - MATCH,节点选择
     """.trimIndent()
 

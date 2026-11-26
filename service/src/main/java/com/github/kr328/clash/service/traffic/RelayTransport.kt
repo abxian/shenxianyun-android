@@ -9,6 +9,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
+internal fun isManagedStateReply(status: Int, hasPayload: Boolean, retryAfter: Long): Boolean =
+    status in 200..499 && hasPayload || status == 429 || status == 503 && retryAfter > 0
+
 /** Fixed-origin API fallback; subscription responses never stored/cached here. */
 object RelayTransport {
     private const val BASE="https://ll.sxnn.de"
@@ -16,7 +19,12 @@ object RelayTransport {
     private const val GRANTS="relay-grants-v1.enc"
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val guard=Any()
-    data class Reply(val status: Int,val json: JSONObject,val retryAfter: Long=0)
+    data class Reply(
+        val status: Int,
+        val json: JSONObject,
+        val retryAfter: Long = 0,
+        val apiBase: String? = null,
+    )
     private fun key(token: String)=MessageDigest.getInstance("SHA-256").digest(token.toByteArray()).joinToString(""){"%02x".format(it)}
     private fun cached(context: Context,token: String): JSONObject?=synchronized(guard) {
         val all=TrafficSecureStore.read(context,GRANTS)?.let {JSONObject(it)} ?: return@synchronized null
@@ -71,7 +79,13 @@ object RelayTransport {
         return value
     }
     /** Public only before registration; fixed operations, no URL forwarding. */
-    fun entry(context: Context,apiBase: String,operation: String,body: JSONObject): Reply {
+    fun entry(
+        context: Context,
+        apiBase: String,
+        operation: String,
+        body: JSONObject,
+        stateAlternate: String? = null,
+    ): Reply {
         val path=when(operation){
             "ticket" -> "/api/import/ticket"
             "exchange" -> "/api/import/exchange"
@@ -79,11 +93,26 @@ object RelayTransport {
             "state" -> "/api/v2/client/state"
             else -> throw IllegalArgumentException("unsupported entry operation")
         }
-        val primary=runCatching {request(context,apiBase.trimEnd('/')+path,"POST",null,body)}.getOrNull()
-        // A gateway can return an HTML 403 before the app handles the request.
-        // Preserve structured business denials from the subscription service.
-        val gatewayDenial = primary?.status == 403 && primary.json.length() == 0
-        if (primary != null && primary.status < 500 && !gatewayDenial) return primary
+        val routes = if (operation == "state" && stateAlternate != null) {
+            listOf(apiBase, stateAlternate).distinct()
+        } else {
+            listOf(apiBase)
+        }
+        for (base in routes) {
+            val reply = runCatching {
+                request(context, base.trimEnd('/') + path, "POST", null, body)
+            }.getOrNull() ?: continue
+            // A gateway HTML response does not carry an account decision.
+            // An explicit rate limit or structured business denial remains authoritative.
+            if (operation == "state") {
+                if (isManagedStateReply(reply.status, reply.json.length() > 0, reply.retryAfter)) {
+                    return reply.copy(apiBase = base)
+                }
+            } else {
+                val gatewayDenial = reply.status == 403 && reply.json.length() == 0
+                if (reply.status < 500 && !gatewayDenial) return reply
+            }
+        }
         return request(context,"$BASE/v1/client/$TENANT/$operation","POST",null,body)
     }
     fun enqueue(context: Context,apiBase: String,token: String,payload: JSONObject): Reply {

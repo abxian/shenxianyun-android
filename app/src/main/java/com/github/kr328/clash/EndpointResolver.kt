@@ -3,6 +3,8 @@ package com.github.kr328.clash
 import android.content.Context
 import com.github.kr328.clash.common.Global
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -16,33 +18,25 @@ import java.net.URL
  * 发现失败 → 用本地缓存；再没有 → 用内置默认。任何一步都不阻塞启动、不抛异常。
  */
 object EndpointResolver {
-    /** 写死的两条主线路：神仙云1=国内直连域名, 神仙云2=国外(CF)域名。始终排最前。 */
-    private val PINNED_API_BASES = listOf(
-        "https://api.sxnn.de:5443", // 神仙云1 国内直连
-        "https://sxnn.de",          // 神仙云2 国外(CF)
-    )
+    const val DEFAULT_API_BASE = "https://api.sxnn.de:5443"
+    internal const val ALTERNATE_API_BASE = "https://sxy-api.52nm.de:5443"
+    private const val LEGACY_EDGE_API_BASE = "https://sxnn.de"
 
-    /** 写死主线路条数（神仙云1/2），UI 判断"前两条是否都不通"用。 */
+    private val PINNED_API_BASES = listOf(DEFAULT_API_BASE, ALTERNATE_API_BASE)
     const val PINNED_COUNT = 2
 
-    /** 内置兜底默认值（发现源全挂时用第一条写死线路）。 */
-    const val DEFAULT_API_BASE = "https://api.sxnn.de:5443"
+    private fun allApiBases(): List<String> =
+        (PINNED_API_BASES + cachedBases() + LEGACY_EDGE_API_BASE).distinct()
 
-    /** 完整线路 = 写死主线路(神仙云1/2) + 发现的 api_bases(神仙云3/4…, 去重排后)。 */
-    private fun allApiBases(): List<String> {
-        val merged = PINNED_API_BASES.toMutableList()
-        for (b in cachedBases()) if (b !in merged) merged.add(b)
-        return merged
-    }
-
-    // 发现锚点：第一个是 web 后台「保存并发布」自动上传的 endpoints.json（唯一真源，dufs），
-    // 后两个是备份（GitHub 手动同步、app 动态接口）。
     private val DISCOVERY_URLS = listOf(
+        "https://sxy.52nm.de:5443/endpoints.json",
         "https://sxy.sxnn.de:5443/endpoints.json",
-        "http://114.80.36.225:5011/endpoints.json",
         "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
         "https://sxnn.de/api/endpoints",
     )
+
+    internal fun managedStateAlternate(activeBase: String): String =
+        if (activeBase == ALTERNATE_API_BASE) DEFAULT_API_BASE else ALTERNATE_API_BASE
 
     private const val STORE = "jc116_endpoints"
     private const val KEY_API_BASES = "api_bases"
@@ -51,8 +45,8 @@ object EndpointResolver {
     private const val KEY_DOWNLOAD_BASE = "download_base"
     private const val KEY_BOOTSTRAP_PROXY = "bootstrap_proxy"
 
-    private const val DISCOVERY_TIMEOUT_MS = 8_000
-    private const val PROBE_TIMEOUT_MS = 5_000
+    private const val DISCOVERY_TIMEOUT_MS = 3_000
+    private const val PROBE_TIMEOUT_MS = 3_000
 
     private val prefs
         get() = Global.application.getSharedPreferences(STORE, Context.MODE_PRIVATE)
@@ -154,30 +148,33 @@ object EndpointResolver {
     }
 
     private fun probe(base: String): Boolean = try {
-        httpGet("$base/api/app-version", PROBE_TIMEOUT_MS).first in 200..299
+        val (status, body) = httpGet("$base/api/app-version", PROBE_TIMEOUT_MS)
+        status in 200..299 && JSONObject(body).let {
+            it.optBoolean("ok") && it.opt("latest_version_name") is String
+        }
     } catch (_: Exception) {
         false
     }
 
-    /** 逐个探测 api_bases，第一个通的设为 active。 */
-    private fun pickApiBase() {
-        val bases = allApiBases()
-        for (base in bases) {
-            if (probe(base)) {
-                prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
-                return
+    /** Probe concurrently while preserving the order of the selected candidates. */
+    private suspend fun pickApiBase(bases: List<String>): String? = coroutineScope {
+        val checks = bases.map { base -> async { probe(base) } }
+        try {
+            bases.indices.firstNotNullOfOrNull { index ->
+                if (checks[index].await()) bases[index].also(::setActive) else null
             }
+        } finally {
+            checks.forEach { it.cancel() }
         }
     }
 
-    /** 启动时后台调用一次：刷新发现源 + 探测可用基址。IO 线程执行，静默失败。 */
+    /** Start with reachable built-in choices before requesting discovery. */
     suspend fun initialize() = withContext(Dispatchers.IO) {
-        try {
-            refresh()
-            pickApiBase()
-        } catch (_: Exception) {
-            // 发现失败不影响任何功能，继续用缓存/默认
-        }
+        val previous = allApiBases()
+        pickApiBase(previous)
+        refresh()
+        val current = allApiBases()
+        if (current != previous) pickApiBase(current)
     }
 
     /** 当前全部候选线路（发现缓存优先，否则内置列表），给线路选择 UI 用。 */
@@ -193,19 +190,9 @@ object EndpointResolver {
     /** 探测单条线路是否可用（UI 用，IO 线程执行）。 */
     suspend fun probeBase(base: String): Boolean = withContext(Dispatchers.IO) { probe(base) }
 
-    /** 请求失败时调用：把当前 active 基址作废并顺延到下一条可用线路。IO 线程执行。 */
+    /** On failure choose a reachable alternative; keep the saved choice if all are offline. */
     suspend fun rotate(): String = withContext(Dispatchers.IO) {
         val bad = apiBase()
-        try {
-            for (base in allApiBases().filter { it != bad }) {
-                if (probe(base)) {
-                    prefs.edit().putString(KEY_ACTIVE_BASE, base).apply()
-                    return@withContext base
-                }
-            }
-        } catch (_: Exception) {
-            // 保持原地址
-        }
-        bad
+        pickApiBase(allApiBases().filterNot { it == bad }) ?: bad
     }
 }

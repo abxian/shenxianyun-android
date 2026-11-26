@@ -29,8 +29,17 @@ assert 'network?.openConnection(target)' in compact(request), 'Selected underlyi
 assert 'instanceFollowRedirects=false' in compact(request), 'Do not forward managed credentials through redirects'
 entry=transport[transport.index('fun entry('):transport.index('fun enqueue(')]
 assert '"state"->"/api/v2/client/state"' in compact(entry)
-assert 'request(context,apiBase.trimEnd' in compact(entry) and '/v1/client/$TENANT/$operation' in entry
-assert 'primary.status<500' in compact(entry), 'Business auth failures must not replay through fallback'
+assert 'request(context,base.trimEnd' in compact(entry) and '/v1/client/$TENANT/$operation' in entry
+assert 'reply.status<500&&!gatewayDenial' in compact(entry), 'Business auth failures must not replay through fallback'
+resolver=(r/'app/src/main/java/com/github/kr328/clash/EndpointResolver.kt').read_text()
+assert 'https://sxy-api.52nm.de:5443' in resolver
+assert 'https://sxy.52nm.de:5443/endpoints.json' in resolver
+assert 'listOf(DEFAULT_API_BASE, ALTERNATE_API_BASE)' in resolver
+assert 'listOf(apiBase,stateAlternate).distinct()' in compact(entry)
+assert entry.index('for (base in routes)') < entry.index('/v1/client/$TENANT/$operation')
+assert 'operation == "state" && stateAlternate != null' in entry
+assert 'stateAlternate = EndpointResolver.managedStateAlternate(apiBase)' in state
+assert 'reply.apiBase?.let(EndpointResolver::setActive)' in state
 assert 'renewalNeeded' in layout and 'Request.RenewCode' in layout
 assert 'activationCode == null || activationExpiresAt == null ? View.GONE : View.VISIBLE' in layout
 assert '!clashRunning || activationExpiresAt == null' not in layout
