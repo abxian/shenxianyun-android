@@ -1168,6 +1168,7 @@ class MainActivity : BaseActivity<MainDesign>() {
           - DOMAIN-SUFFIX,jc116.com,DIRECT
           - DOMAIN,sxy-api.52nm.de,DIRECT
           - DOMAIN,sxy.52nm.de,DIRECT
+          - DOMAIN,domains.52nm.de,DIRECT
           - MATCH,节点选择
     """.trimIndent()
 

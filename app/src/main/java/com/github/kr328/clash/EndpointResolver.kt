@@ -29,6 +29,8 @@ object EndpointResolver {
         (PINNED_API_BASES + cachedBases() + LEGACY_EDGE_API_BASE).distinct()
 
     private val AUTHORITATIVE_DISCOVERY_URLS = listOf(
+        "https://domains.52nm.de:5443/v1/shenxianyun.json",
+        "https://raw.githubusercontent.com/abxian/domain-config/main/manifests/shenxianyun.json",
         "https://sxy.52nm.de:5443/endpoints.json",
         "https://raw.githubusercontent.com/abxian/shenxianyun-config/main/endpoints.json",
     )
