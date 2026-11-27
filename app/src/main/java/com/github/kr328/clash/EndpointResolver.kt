@@ -105,30 +105,46 @@ object EndpointResolver {
     }
 
     internal suspend fun apkDownloadUrl(version: String, primary: String): String? = withContext(Dispatchers.IO) {
-        val release = version.takeIf { Regex("""\d+\.\d+\.\d+""").matches(it) }?.let {
-            "https://github.com/abxian/shenxianyun-android/releases/download/v$it/shenxianyun.apk"
-        }
-        val official = runCatching { java.net.URI(primary) }.getOrNull()?.takeIf {
-            it.scheme == "https" && it.host != null && it.userInfo == null
-        }?.toString()
-        val available = official?.takeIf { url ->
-            try {
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "HEAD"
-                    connectTimeout = PROBE_TIMEOUT_MS
-                    readTimeout = PROBE_TIMEOUT_MS
-                    instanceFollowRedirects = false
-                }
-                try {
-                    connection.responseCode in 200..299 && connection.contentLength > 0
-                } finally {
-                    connection.disconnect()
-                }
-            } catch (_: java.io.IOException) {
-                false
+        if (!Regex("""\d+\.\d+\.\d+""").matches(version)) return@withContext null
+        val filename = "cmfa-$version-meta-universal-release.apk"
+        val candidates = linkedSetOf<String>()
+        fun discoveredPackage() {
+            val base = verifiedHttpsUrl(downloadBase()) ?: return
+            if (base.query == null && base.fragment == null) {
+                candidates += "${base.toString().trimEnd('/')}/sxy/$filename"
             }
         }
-        available ?: release ?: official
+        discoveredPackage()
+        verifiedHttpsUrl(primary)?.let { candidates += it.toString() }
+        candidates.firstOrNull(::isApkReachable)?.let { return@withContext it }
+
+        val previous = candidates.toSet()
+        refresh()
+        discoveredPackage()
+        candidates += "https://github.com/abxian/shenxianyun-android/releases/download/v$version/shenxianyunall.apk"
+        candidates.firstOrNull { it !in previous && isApkReachable(it) }
+    }
+
+    private fun verifiedHttpsUrl(value: String): java.net.URI? =
+        runCatching { java.net.URI(value) }.getOrNull()?.takeIf {
+            it.scheme == "https" && it.host != null && it.userInfo == null
+        }
+
+    private fun isApkReachable(url: String): Boolean = try {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = PROBE_TIMEOUT_MS
+            readTimeout = PROBE_TIMEOUT_MS
+            setRequestProperty("Range", "bytes=0-3")
+        }
+        try {
+            connection.responseCode in 200..299 && connection.url.protocol == "https" &&
+                connection.inputStream.use { input -> input.read() == 0x50 && input.read() == 0x4b &&
+                    input.read() == 3 && input.read() == 4 }
+        } finally {
+            connection.disconnect()
+        }
+    } catch (_: java.io.IOException) {
+        false
     }
 
     /** 后台下发的兜底代理（http://[user:pass@]host:port，也支持 socks5://）。无则空串。 */
