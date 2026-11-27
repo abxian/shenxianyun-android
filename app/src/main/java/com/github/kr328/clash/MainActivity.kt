@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
+import androidx.lifecycle.lifecycleScope
 import com.github.kr328.clash.common.compat.versionCodeCompat
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.core.Clash
@@ -1055,6 +1056,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                     lifecycleScope.launch {
                         val url = EndpointResolver.apkDownloadUrl(version, apkUrl)
                         if (url != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        else showToast(R.string.app_update_download_unavailable, ToastDuration.Long)
                     }
                 }
                 .setNegativeButton(R.string.app_update_later, null)
