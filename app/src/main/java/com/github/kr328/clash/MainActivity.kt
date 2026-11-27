@@ -195,7 +195,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                                 hadRunningTunnel = false
                                 launch {
                                     val code = savedActivationCode()
-                                    if (code.isNotBlank()) design.importSubscriptionCode(code, silent = true, notifySuccess = false)
+                                    val active = withProfile { queryActive() }
+                                    if (code.isNotBlank() && active != null &&
+                                        (active.uuid == managedProfileUuid() || active.uuid == expiredProfileUuid())
+                                    ) design.importSubscriptionCode(code, silent = true, notifySuccess = false)
                                 }
                             }
                         }

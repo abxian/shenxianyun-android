@@ -47,6 +47,9 @@ assert 'withProfile { queryActive()?.imported != true }' in toggle
 assert 'design.showCodeImportDialog()' in toggle and 'else design.startClash()' in toggle
 assert dialog.index('isOtherSubscriptionCommand(code)') < dialog.index('importSubscriptionCode(code')
 assert 'ProfilesActivity.EXTRA_OTHER_IMPORT' in dialog
+assert refresh.index('active.uuid != managedProfileUuid()') < refresh.index('setSubscriptionStatus("正在更新配置')
+stop = a[a.index('Event.ClashStop ->'):a.index('else -> Unit', a.index('Event.ClashStop ->'))]
+assert stop.index('active.uuid == managedProfileUuid()') < stop.index('importSubscriptionCode(code')
 assert 'if (importSubscriptionCode(code, onStatus = { status.text = it }))' in dialog
 assert 'if (firstImport) startClash(refreshManagedProfile = false)' in dialog
 assert 'refreshManagedProfile: Boolean = true' in start and 'if (refreshManagedProfile)' in start
