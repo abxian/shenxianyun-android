@@ -41,7 +41,12 @@ print('Cached startup and stable update-button integration passed')
 dialog = a[a.index('private fun MainDesign.showCodeImportDialog()'):a.index('private fun MainDesign.showExpiredDialog()')]
 assert 'access_code_input' not in l
 assert 'activationCode == null ? @string/import_code_title : @string/switch_import_code' in l
-assert 'if (savedActivationCode().isBlank()) design.showCodeImportDialog()' in a
+toggle = a[a.index('MainDesign.Request.ToggleStatus ->'):a.index('MainDesign.Request.ImportByCode ->')]
+assert 'savedActivationCode().isBlank()' in toggle
+assert 'withProfile { queryActive()?.imported != true }' in toggle
+assert 'design.showCodeImportDialog()' in toggle and 'else design.startClash()' in toggle
+assert dialog.index('isOtherSubscriptionCommand(code)') < dialog.index('importSubscriptionCode(code')
+assert 'ProfilesActivity.EXTRA_OTHER_IMPORT' in dialog
 assert 'if (importSubscriptionCode(code, onStatus = { status.text = it }))' in dialog
 assert 'if (firstImport) startClash(refreshManagedProfile = false)' in dialog
 assert 'refreshManagedProfile: Boolean = true' in start and 'if (refreshManagedProfile)' in start
