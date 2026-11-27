@@ -211,7 +211,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                                     design.setStarting(true)
                                     try {
                                         if (clashRunning) stopClashService()
-                                        else if (savedActivationCode().isBlank()) design.showCodeImportDialog()
+                                        else if (savedActivationCode().isBlank() &&
+                                            withProfile { queryActive()?.imported != true }
+                                        ) design.showCodeImportDialog()
                                         else design.startClash()
                                     } catch (e: CancellationException) {
                                         throw e
