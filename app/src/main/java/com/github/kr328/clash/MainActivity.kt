@@ -229,11 +229,15 @@ class MainActivity : BaseActivity<MainDesign>() {
                         MainDesign.Request.ImportByCode ->
                             design.showCodeImportDialog()
                         MainDesign.Request.UpdateSubscription -> {
-                            val code = savedActivationCode()
-                            if (code.isBlank()) {
-                                design.showCodeImportDialog()
-                            } else {
-                                design.requestSubscriptionRefresh(force = true)
+                            launch {
+                                val active = withProfile { queryActive() }
+                                when {
+                                    active != null && active.uuid != managedProfileUuid() &&
+                                        active.uuid != expiredProfileUuid() ->
+                                        startActivity(ProfilesActivity::class.intent)
+                                    savedActivationCode().isBlank() -> design.showCodeImportDialog()
+                                    else -> design.requestSubscriptionRefresh(force = true)
+                                }
                             }
                         }
                         MainDesign.Request.RenewCode ->
@@ -712,8 +716,11 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
         subscriptionRefreshCode = code
         return async {
-            setSubscriptionStatus("正在更新配置…", true)
             try {
+                val active = withProfile { queryActive() }
+                if (active == null || (active.uuid != managedProfileUuid() && active.uuid != expiredProfileUuid()))
+                    return@async false
+                setSubscriptionStatus("正在更新配置…", true)
                 coroutineScope {
                     val progress = launch {
                         var elapsed = 0
@@ -744,7 +751,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 if (savedActivationCode() == code) {
                     val message = when (error) {
                         is AccessStateRejected -> codeImportFailureMessage(error.reason)
-                        is LocalSubscriptionSelected -> "当前使用其他配置，请切回提取码配置后再更新"
+                        is LocalSubscriptionSelected -> ""
                         is ManagedSubscriptionUnauthorized -> "设备授权已失效，请重新验证提取码；原配置已保留"
                         else -> "配置更新失败，已保留原配置，请稍后重试"
                     }
