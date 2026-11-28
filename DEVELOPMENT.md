@@ -170,6 +170,8 @@ git push -u origin <branch>
 gh workflow run build-apk-simple.yaml --ref <branch>
 ```
 
+`Build Android APK` 直接提供 `神仙云.apk`，与已签名的通用 `shenxianyunall.apk` 字节相同。正式分发时，Dufs 的 `/sxy/神仙云.apk` 使用同版本通用包，站点的 Android 下载链接也指向这个中文文件。
+
 工作流 artifact 仅用于编译验证，不等于发布。没有明确发布批准时不得修改版本、打 tag、创建 Release、上传 Dufs 或更新后台版本元数据。
 
 Release 产物：
