@@ -94,3 +94,15 @@ jobs:
         with:
           name: shenxianyun-android-apk
           path: app/build/outputs/apk/meta/release/*.apk
+
+      - name: Name the downloadable universal installer
+        run: |
+          mkdir -p dist-installers
+          cp app/build/outputs/apk/meta/release/shenxianyunall.apk dist-installers/神仙云.apk
+
+      - name: Upload named universal APK
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist-installers/神仙云.apk
+          if-no-files-found: error

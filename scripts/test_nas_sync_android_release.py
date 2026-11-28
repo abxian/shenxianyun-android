@@ -16,7 +16,7 @@ SPEC.loader.exec_module(sync)
 
 class ReleaseSyncTests(unittest.TestCase):
     def test_public_dufs_alias_maps_to_release_asset(self):
-        self.assertEqual(sync.DUFS_ALIASES["神仙云.apk"], "shenxianyun.apk")
+        self.assertEqual(sync.DUFS_ALIASES["神仙云.apk"], "shenxianyunall.apk")
 
     def test_only_stable_tags_are_accepted(self):
         self.assertEqual(sync.version_tuple("v2.11.50"), (2, 11, 50))

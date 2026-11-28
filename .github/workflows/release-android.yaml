@@ -94,6 +94,11 @@ jobs:
       - name: Build signed Meta Release APK
         run: ./gradlew --no-daemon app:assembleMetaRelease
 
+      - name: Prepare release notes with the official download
+        run: |
+          printf '%s\n\n' '官网下载（最新版通用包）：[神仙云.apk](https://sxy.52nm.de:5443/sxy/%E7%A5%9E%E4%BB%99%E4%BA%91.apk)' > release.txt
+          cat "docs/RELEASE_${VERSION}.md" >> release.txt
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -102,7 +107,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           prerelease: false
           generate_release_notes: true
-          body_path: docs/RELEASE_${{ env.VERSION }}.md
+          body_path: release.txt
           files: |
             app/build/outputs/apk/meta/release/*.apk
             app/build/outputs/apk/meta/release/output-metadata.json
