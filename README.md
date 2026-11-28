@@ -2,6 +2,8 @@
 
 这是神仙云安卓客户端，基于 Clash Meta for Android 改造。目标是保留稳定的原版 VPN/TUN 开关和 Mihomo 内核能力，同时把使用流程简化为提取码订阅、一键启动、节点选择。
 
+下载正式版通用安装包：[神仙云.apk](https://sxy.52nm.de:5443/sxy/%E7%A5%9E%E4%BB%99%E4%BA%91.apk)。
+
 ## 当前功能
 
 - 提取码订阅
